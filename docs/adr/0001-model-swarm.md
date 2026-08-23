@@ -14,7 +14,7 @@ CyberHIVE model artifacts use content-addressed chunks. Version 0.1 uses fixed-s
 
 Peers may exchange verified chunks directly. The coordinator may provide peer discovery and scheduling, but model bytes must not require transit through the coordinator. A node stores verified downloaded chunks in its local CAS immediately, making them available for later seeding subject to authorization policy.
 
-Peer transport and peer discovery remain behind interfaces so a future Dragonfly, QUIC, libp2p, or native CyberHIVE backend can replace the initial HTTP transport without changing artifact identity.
+Peer transport and peer discovery remain behind separate interfaces so a future Dragonfly, QUIC, libp2p, coordinator-backed discovery source, or native CyberHIVE backend can replace the initial explicit inventory and HTTP transport without changing artifact identity.
 
 ## Consequences
 
@@ -23,11 +23,13 @@ Positive:
 - origin traffic decreases as the swarm gains copies;
 - chunks are independently verifiable and resumable;
 - a coordinator cannot become the model-data bottleneck;
+- discovery and transport can evolve independently;
 - the first implementation has no third-party Go runtime dependencies.
 
 Negative:
 - v0.1 fixed-size chunking does not deduplicate shifted content as efficiently as content-defined chunking;
 - HTTP transport does not yet provide node identity or encryption by itself;
+- explicit JSON inventory is operationally manual and is only a bootstrap discovery implementation;
 - peer scheduling initially uses explicit inventory rather than measured topology and throughput.
 
 ## Security boundary
@@ -47,4 +49,4 @@ Internet-facing seeding, automatic port mapping, anonymous DHT discovery, and pu
 
 The manifest is explicitly versioned. Future chunking algorithms must use a new schema/version or algorithm field while retaining readers for supported older manifests.
 
-Rollback is removal of the feature branch/build. No canonical data migration or production state is required for v0.1.
+The explicit peer inventory is non-canonical runtime input and can be replaced without artifact migration. Rollback is removal of the feature branch/build. No canonical data migration or production state is required for v0.1.
