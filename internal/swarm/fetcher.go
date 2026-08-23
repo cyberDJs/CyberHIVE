@@ -21,19 +21,19 @@ type ChunkClient interface {
 
 type Fetcher struct {
 	store       *cas.Store
-	inventory   peer.Inventory
+	source      peer.Source
 	client      ChunkClient
 	concurrency int
 }
 
-func NewFetcher(store *cas.Store, inventory peer.Inventory, client ChunkClient, concurrency int) (*Fetcher, error) {
-	if store == nil || client == nil {
-		return nil, errors.New("store and client are required")
+func NewFetcher(store *cas.Store, source peer.Source, client ChunkClient, concurrency int) (*Fetcher, error) {
+	if store == nil || source == nil || client == nil {
+		return nil, errors.New("store, peer source and client are required")
 	}
 	if concurrency <= 0 {
 		concurrency = 4
 	}
-	return &Fetcher{store: store, inventory: inventory, client: client, concurrency: concurrency}, nil
+	return &Fetcher{store: store, source: source, client: client, concurrency: concurrency}, nil
 }
 
 func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, outputPath string) error {
@@ -97,7 +97,7 @@ func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, output
 }
 
 func (f *Fetcher) fetchChunk(ctx context.Context, chunk manifest.Chunk) error {
-	candidates := f.inventory.Candidates(chunk.SHA256)
+	candidates := f.source.Candidates(chunk.SHA256)
 	if len(candidates) == 0 {
 		return fmt.Errorf("no peer has chunk %s", chunk.SHA256)
 	}
@@ -125,10 +125,13 @@ func (f *Fetcher) fetchChunk(ctx context.Context, chunk manifest.Chunk) error {
 }
 
 func (f *Fetcher) assemble(m manifest.Manifest, outputPath string) error {
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0o750); err != nil && filepath.Dir(outputPath) != "." {
-		return fmt.Errorf("create output directory: %w", err)
+	dir := filepath.Dir(outputPath)
+	if dir != "." {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			return fmt.Errorf("create output directory: %w", err)
+		}
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(outputPath), ".artifact-*")
+	tmp, err := os.CreateTemp(dir, ".artifact-*")
 	if err != nil {
 		return fmt.Errorf("create temp artifact: %w", err)
 	}
