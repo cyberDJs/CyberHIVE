@@ -1,4 +1,5 @@
 /cyberhive
 /data/
 *.manifest.json
+peers.json
 .DS_Store
