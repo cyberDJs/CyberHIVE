@@ -1,0 +1,11 @@
+version: 1
+skills:
+  - name: cyberhive-architecture
+    status: experimental
+    purpose: Architecture decisions, ADRs, diagrams, trade-offs and security/performance review.
+  - name: cyberhive-repo-engineer
+    status: experimental
+    purpose: Repository-aware implementation workflow with tests, docs, PR summary and rollback.
+  - name: cyberhive-model-ops
+    status: experimental
+    purpose: Hardware-aware model/runtime selection, deployment planning and benchmark validation.
