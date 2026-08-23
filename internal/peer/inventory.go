@@ -13,6 +13,10 @@ func (p Peer) Has(hash string) bool {
 	return ok
 }
 
+type Source interface {
+	Candidates(hash string) []Peer
+}
+
 type Inventory struct {
 	peers []Peer
 }
