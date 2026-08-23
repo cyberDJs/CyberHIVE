@@ -31,7 +31,7 @@ func Hash(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func validateHash(hash string) error {
+func ValidateHash(hash string) error {
 	if len(hash) != 64 {
 		return ErrInvalidHash
 	}
@@ -43,7 +43,7 @@ func validateHash(hash string) error {
 }
 
 func (s *Store) Path(hash string) (string, error) {
-	if err := validateHash(hash); err != nil {
+	if err := ValidateHash(hash); err != nil {
 		return "", err
 	}
 	return filepath.Join(s.root, "sha256", hash[:2], hash[2:]), nil
@@ -59,7 +59,7 @@ func (s *Store) Has(hash string) bool {
 }
 
 func (s *Store) Put(hash string, data []byte) error {
-	if err := validateHash(hash); err != nil {
+	if err := ValidateHash(hash); err != nil {
 		return err
 	}
 	if actual := Hash(data); actual != hash {
