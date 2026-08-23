@@ -1,6 +1,7 @@
 package manifest_test
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,5 +35,13 @@ func TestBuildFileProducesValidManifestAndCAS(t *testing.T) {
 		if !store.Has(chunk.SHA256) {
 			t.Fatalf("missing chunk %s", chunk.SHA256)
 		}
+	}
+}
+
+func TestDecodeRejectsUnknownField(t *testing.T) {
+	t.Parallel()
+	data := []byte(`{"schema_version":1,"name":"x","size":0,"chunk_size":4,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","chunks":[],"surprise":true}`)
+	if _, err := manifest.Decode(bytes.NewReader(data)); err == nil {
+		t.Fatal("expected unknown manifest field to be rejected")
 	}
 }
