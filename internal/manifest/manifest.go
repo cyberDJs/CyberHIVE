@@ -89,22 +89,63 @@ func BuildFile(path string, store *cas.Store, chunkSize int64) (Manifest, error)
 	}, nil
 }
 
+func LoadFile(path string) (Manifest, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return Manifest{}, fmt.Errorf("open manifest: %w", err)
+	}
+	defer file.Close()
+	return Decode(file)
+}
+
+func Decode(r io.Reader) (Manifest, error) {
+	if r == nil {
+		return Manifest{}, errors.New("manifest reader is required")
+	}
+	decoder := json.NewDecoder(r)
+	decoder.DisallowUnknownFields()
+	var m Manifest
+	if err := decoder.Decode(&m); err != nil {
+		return Manifest{}, fmt.Errorf("decode manifest: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return Manifest{}, errors.New("manifest contains trailing JSON value")
+		}
+		return Manifest{}, fmt.Errorf("decode trailing manifest data: %w", err)
+	}
+	if err := m.Validate(); err != nil {
+		return Manifest{}, err
+	}
+	return m, nil
+}
+
 func (m Manifest) Validate() error {
 	if m.SchemaVersion != 1 {
 		return fmt.Errorf("unsupported manifest schema version %d", m.SchemaVersion)
 	}
-	if m.Name == "" || m.Size < 0 || m.ChunkSize <= 0 || len(m.SHA256) != 64 {
+	if m.Name == "" || m.Size < 0 || m.ChunkSize <= 0 {
 		return errors.New("invalid manifest metadata")
+	}
+	if err := cas.ValidateHash(m.SHA256); err != nil {
+		return fmt.Errorf("invalid artifact sha256: %w", err)
 	}
 	var total int64
 	for i, chunk := range m.Chunks {
-		if chunk.Index != i || chunk.Offset != total || chunk.Size <= 0 || len(chunk.SHA256) != 64 {
+		if chunk.Index != i || chunk.Offset != total || chunk.Size <= 0 || chunk.Size > m.ChunkSize {
 			return fmt.Errorf("invalid chunk metadata at index %d", i)
+		}
+		if err := cas.ValidateHash(chunk.SHA256); err != nil {
+			return fmt.Errorf("invalid chunk sha256 at index %d: %w", i, err)
 		}
 		total += chunk.Size
 	}
 	if total != m.Size {
 		return fmt.Errorf("manifest size mismatch: chunks=%d artifact=%d", total, m.Size)
+	}
+	if m.Size > 0 && len(m.Chunks) == 0 {
+		return errors.New("non-empty artifact has no chunks")
 	}
 	return nil
 }
