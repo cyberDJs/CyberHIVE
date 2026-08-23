@@ -11,6 +11,18 @@ Prefer a modular monolith until measured scaling or isolation constraints requir
 5. Update docs/ADR when behavior or architecture changes.
 6. Record security/compatibility impact.
 
+## Model Swarm Go checks
+
+From the repository root run:
+
+```bash
+go vet ./...
+go test -race ./...
+go build ./cmd/cyberhive
+```
+
+The current HTTP peer transport is development-only. Keep it bound to localhost or a controlled test network until peer identity and artifact authorization are implemented.
+
 ## M0 Python checks
 
 The first benchmark tooling intentionally uses the Python standard library only.

@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: go build ./cmd/cyberhive
+      - run: python3 -m unittest discover -s tests -v
+      - run: python3 -m py_compile scripts/collect_host_facts.py scripts/benchmark_openai.py
