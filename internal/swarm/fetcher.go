@@ -16,7 +16,7 @@ import (
 )
 
 type ChunkClient interface {
-	Fetch(ctx context.Context, baseURL, hash string) ([]byte, error)
+	Fetch(ctx context.Context, baseURL, artifactHash, hash string) ([]byte, error)
 }
 
 type Fetcher struct {
@@ -57,7 +57,7 @@ func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, output
 			if f.store.Has(chunk.SHA256) {
 				continue
 			}
-			if err := f.fetchChunk(ctx, chunk); err != nil {
+			if err := f.fetchChunk(ctx, m.SHA256, chunk); err != nil {
 				select {
 				case errCh <- err:
 					cancel()
@@ -96,14 +96,14 @@ func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, output
 	return f.assemble(m, outputPath)
 }
 
-func (f *Fetcher) fetchChunk(ctx context.Context, chunk manifest.Chunk) error {
+func (f *Fetcher) fetchChunk(ctx context.Context, artifactHash string, chunk manifest.Chunk) error {
 	candidates := f.source.Candidates(chunk.SHA256)
 	if len(candidates) == 0 {
 		return fmt.Errorf("no peer has chunk %s", chunk.SHA256)
 	}
 	var errs []error
 	for _, candidate := range candidates {
-		data, err := f.client.Fetch(ctx, candidate.BaseURL, chunk.SHA256)
+		data, err := f.client.Fetch(ctx, candidate.BaseURL, artifactHash, chunk.SHA256)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("peer %s: %w", candidate.ID, err))
 			continue
