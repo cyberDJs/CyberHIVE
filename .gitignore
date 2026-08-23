@@ -1,0 +1,4 @@
+/cyberhive
+/data/
+*.manifest.json
+.DS_Store
