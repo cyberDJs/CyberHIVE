@@ -1,12 +1,20 @@
-.PHONY: test vet check build
+.PHONY: test go-test python-test vet python-compile check build
 
-test:
+go-test:
 	go test ./...
+
+python-test:
+	python3 -m unittest discover -s tests -v
+
+test: go-test python-test
 
 vet:
 	go vet ./...
 
-check: vet test
+python-compile:
+	python3 -m py_compile scripts/collect_host_facts.py scripts/benchmark_openai.py
+
+check: vet python-compile test
 
 build:
 	go build ./cmd/cyberhive
