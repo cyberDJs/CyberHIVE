@@ -37,3 +37,35 @@ func TestOriginFallbackProducesOriginMetrics(t *testing.T) {
 		t.Fatalf("expected origin fallback metrics, got %+v", result.Metrics)
 	}
 }
+
+func TestContendedMultiSchedulerUsesMultiplePeersAndFinishesFaster(t *testing.T) {
+	ctx := context.Background()
+	base := swarmbench.Config{ArtifactMiB: 8, ChunkMiB: 1, Concurrency: 4, Scenario: "contended-multi"}
+
+	firstConfig := base
+	firstConfig.Strategy = "first"
+	first, err := swarmbench.Run(ctx, firstConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	schedulerConfig := base
+	schedulerConfig.Strategy = "scheduler"
+	scheduled, err := swarmbench.Run(ctx, schedulerConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	usedPeers := 0
+	for _, metric := range scheduled.Metrics.Peers {
+		if metric.Bytes > 0 {
+			usedPeers++
+		}
+	}
+	if usedPeers < 2 {
+		t.Fatalf("scheduler did not use multiple useful peers: %+v", scheduled.Metrics.Peers)
+	}
+	if scheduled.Metrics.ArtifactCompletionMS >= first.Metrics.ArtifactCompletionMS*0.85 {
+		t.Fatalf("scheduler did not materially improve contended multi-peer completion: first=%fms scheduler=%fms", first.Metrics.ArtifactCompletionMS, scheduled.Metrics.ArtifactCompletionMS)
+	}
+}

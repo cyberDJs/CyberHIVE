@@ -38,7 +38,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	chunkMiB := fs.Int("chunk-mib", 1, "chunk size in MiB")
 	concurrency := fs.Int("concurrency", 4, "fetch worker count")
 	strategy := fs.String("strategy", "first", "source strategy: first or scheduler")
-	scenario := fs.String("scenario", "heterogeneous", "scenario: single, multi, heterogeneous, origin-fallback")
+	scenario := fs.String("scenario", "heterogeneous", "scenario: single, multi, contended-multi, heterogeneous, origin-fallback")
 	cachePercent := fs.Int("cache-percent", 0, "percentage of chunks pre-seeded in local CAS")
 	runs := fs.Int("runs", 1, "repeat count per benchmark configuration")
 	matrix := fs.Bool("matrix", false, "run the issue #6 synthetic matrix")

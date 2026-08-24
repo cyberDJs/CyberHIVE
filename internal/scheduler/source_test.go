@@ -73,3 +73,80 @@ func allPeers(chunk string, ids ...string) peer.Inventory {
 	}
 	return peer.NewInventory(peers)
 }
+
+type mutableSource struct {
+	peers []peer.Peer
+}
+
+func (m *mutableSource) Candidates(string) []peer.Peer {
+	return append([]peer.Peer(nil), m.peers...)
+}
+
+func TestRankThreePeersExposesExplainableComponents(t *testing.T) {
+	now := time.Now()
+	chunk := cas.Hash([]byte("explainable-three-peer-ranking"))
+	inventory := allPeers(chunk, "peer-a", "peer-b", "peer-c")
+	telemetry := scheduler.StaticTelemetry{
+		"peer-a": {ThroughputBytesPerSecond: 800_000_000, RTT: 2 * time.Millisecond, UploadUtilization: 0.1, Locality: scheduler.LocalityLAN, ObservedAt: now},
+		"peer-b": {ThroughputBytesPerSecond: 500_000_000, RTT: 5 * time.Millisecond, UploadUtilization: 0.2, Locality: scheduler.LocalityLAN, ObservedAt: now},
+		"peer-c": {ThroughputBytesPerSecond: 100_000_000, RTT: 30 * time.Millisecond, UploadUtilization: 0.6, Locality: scheduler.LocalityVPN, ObservedAt: now},
+	}
+	ranked := scheduler.NewSource(inventory, telemetry, time.Minute).Rank(chunk)
+	if len(ranked) != 3 {
+		t.Fatalf("expected three ranked candidates, got %d", len(ranked))
+	}
+	for _, candidate := range ranked {
+		if !candidate.Fresh {
+			t.Fatalf("candidate %s unexpectedly lacks fresh telemetry", candidate.Peer.ID)
+		}
+		components := []float64{candidate.Throughput, candidate.Latency, candidate.Load, candidate.Locality, candidate.Affinity, candidate.Score}
+		for _, value := range components {
+			if value < 0 || value > 1 {
+				t.Fatalf("candidate %s has non-normalized explainable component %f", candidate.Peer.ID, value)
+			}
+		}
+	}
+}
+
+func TestSourceReflectsPeerDisappearance(t *testing.T) {
+	now := time.Now()
+	chunk := cas.Hash([]byte("peer-disappearance"))
+	upstream := &mutableSource{peers: []peer.Peer{
+		{ID: "peer-a", BaseURL: "http://peer-a", Chunks: map[string]struct{}{chunk: {}}},
+		{ID: "peer-b", BaseURL: "http://peer-b", Chunks: map[string]struct{}{chunk: {}}},
+	}}
+	telemetry := scheduler.StaticTelemetry{
+		"peer-a": {ThroughputBytesPerSecond: 100_000_000, RTT: time.Millisecond, Locality: scheduler.LocalityLAN, ObservedAt: now},
+		"peer-b": {ThroughputBytesPerSecond: 100_000_000, RTT: time.Millisecond, Locality: scheduler.LocalityLAN, ObservedAt: now},
+	}
+	source := scheduler.NewSource(upstream, telemetry, time.Minute)
+	if got := source.Candidates(chunk); len(got) != 2 {
+		t.Fatalf("expected two initial peers, got %#v", got)
+	}
+	upstream.peers = upstream.peers[1:]
+	got := source.Candidates(chunk)
+	if len(got) != 1 || got[0].ID != "peer-b" {
+		t.Fatalf("scheduler retained disappeared peer: %#v", got)
+	}
+}
+
+func TestEquivalentPeerTieHandlingIsDeterministic(t *testing.T) {
+	now := time.Now()
+	chunk := cas.Hash([]byte("equivalent-tie"))
+	inventory := allPeers(chunk, "peer-a", "peer-b", "peer-c")
+	telemetry := scheduler.StaticTelemetry{}
+	for _, id := range []string{"peer-a", "peer-b", "peer-c"} {
+		telemetry[id] = scheduler.Telemetry{ThroughputBytesPerSecond: 100_000_000, RTT: 3 * time.Millisecond, UploadUtilization: 0.2, Locality: scheduler.LocalityLAN, ObservedAt: now}
+	}
+	source := scheduler.NewSource(inventory, telemetry, time.Minute)
+	first := source.Rank(chunk)
+	second := source.Rank(chunk)
+	if len(first) != len(second) {
+		t.Fatalf("ranking length changed: %d vs %d", len(first), len(second))
+	}
+	for i := range first {
+		if first[i].Peer.ID != second[i].Peer.ID || first[i].Score != second[i].Score {
+			t.Fatalf("equivalent-peer ranking is not deterministic: %#v %#v", first, second)
+		}
+	}
+}
