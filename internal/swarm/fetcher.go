@@ -112,7 +112,7 @@ func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, output
 			if f.observer != nil {
 				f.observer.CacheMiss(chunk.Size)
 			}
-			if err := f.fetchChunk(workCtx, chunk); err != nil {
+			if err := f.fetchChunk(workCtx, m.SHA256, chunk); err != nil {
 				if parentCtx.Err() != nil {
 					return
 				}
@@ -154,7 +154,7 @@ func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, output
 	return f.assemble(parentCtx, m, outputPath)
 }
 
-func (f *Fetcher) fetchChunk(ctx context.Context, chunk manifest.Chunk) error {
+func (f *Fetcher) fetchChunk(ctx context.Context, artifactHash string, chunk manifest.Chunk) error {
 	candidates := f.source.Candidates(chunk.SHA256)
 	var errs []error
 	attempted := false
@@ -173,7 +173,7 @@ func (f *Fetcher) fetchChunk(ctx context.Context, chunk manifest.Chunk) error {
 				f.observer.Fallback()
 			}
 			attempted = true
-			data, err := f.fetchVerified(ctx, candidate.ID, candidate.BaseURL, SourcePeer, chunk)
+			data, err := f.fetchVerified(ctx, artifactHash, candidate.ID, candidate.BaseURL, SourcePeer, chunk)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("peer %s round %d: %w", candidate.ID, round+1, err))
 				continue
@@ -192,7 +192,7 @@ func (f *Fetcher) fetchChunk(ctx context.Context, chunk manifest.Chunk) error {
 		if attempted && f.observer != nil {
 			f.observer.Fallback()
 		}
-		data, err := f.fetchVerified(ctx, "origin", f.originBaseURL, SourceOrigin, chunk)
+		data, err := f.fetchVerified(ctx, artifactHash, "origin", f.originBaseURL, SourceOrigin, chunk)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("origin: %w", err))
 		} else {
@@ -209,9 +209,15 @@ func (f *Fetcher) fetchChunk(ctx context.Context, chunk manifest.Chunk) error {
 	return fmt.Errorf("all sources failed for chunk %s: %w", chunk.SHA256, errors.Join(errs...))
 }
 
-func (f *Fetcher) fetchVerified(ctx context.Context, sourceID, baseURL string, kind SourceKind, chunk manifest.Chunk) ([]byte, error) {
+func (f *Fetcher) fetchVerified(ctx context.Context, artifactHash, sourceID, baseURL string, kind SourceKind, chunk manifest.Chunk) ([]byte, error) {
 	started := time.Now()
-	data, err := f.client.Fetch(ctx, baseURL, chunk.SHA256)
+	var data []byte
+	var err error
+	if artifactClient, ok := f.client.(ArtifactChunkClient); ok {
+		data, err = artifactClient.FetchArtifactChunk(ctx, baseURL, artifactHash, chunk.SHA256)
+	} else {
+		data, err = f.client.Fetch(ctx, baseURL, chunk.SHA256)
+	}
 	event := AttemptEvent{SourceID: sourceID, Kind: kind, Duration: time.Since(started)}
 	if len(data) > 0 {
 		event.Bytes = int64(len(data))
