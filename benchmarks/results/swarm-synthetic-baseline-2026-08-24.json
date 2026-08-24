@@ -1,0 +1,214 @@
+{
+  "date": "2026-08-24",
+  "environment": {
+    "go": "go1.23.2",
+    "kind": "isolated-linux-amd64-runner",
+    "network": "synthetic controlled peer profiles"
+  },
+  "five_run_key_point": {
+    "config": {
+      "artifact_mib": 8,
+      "chunk_mib": 1,
+      "concurrency": 4,
+      "scenario": "heterogeneous"
+    },
+    "first_median_ms": 100.915753,
+    "first_ms": [
+      100.915753,
+      114.16287,
+      100.58433,
+      111.909276,
+      93.518182
+    ],
+    "median_improvement_percent": 25.55065709116792,
+    "scheduler_median_ms": 75.131115,
+    "scheduler_ms": [
+      99.065379,
+      75.131115,
+      64.05856,
+      77.567386,
+      67.671852
+    ]
+  },
+  "heterogeneous_comparison": {
+    "comparison_count": 12,
+    "comparisons": [
+      {
+        "chunk_mib": 1,
+        "concurrency": 1,
+        "first_ms": 231.472178,
+        "improvement_percent": 52.121824334326696,
+        "scheduler_ms": 110.824656
+      },
+      {
+        "chunk_mib": 1,
+        "concurrency": 4,
+        "first_ms": 150.607103,
+        "improvement_percent": 47.50715044296417,
+        "scheduler_ms": 79.05796
+      },
+      {
+        "chunk_mib": 1,
+        "concurrency": 8,
+        "first_ms": 114.03868,
+        "improvement_percent": 21.69301328286157,
+        "scheduler_ms": 89.300254
+      },
+      {
+        "chunk_mib": 1,
+        "concurrency": 16,
+        "first_ms": 101.698819,
+        "improvement_percent": 20.293990827956424,
+        "scheduler_ms": 81.06007
+      },
+      {
+        "chunk_mib": 4,
+        "concurrency": 1,
+        "first_ms": 188.140333,
+        "improvement_percent": 35.24001788601065,
+        "scheduler_ms": 121.839646
+      },
+      {
+        "chunk_mib": 4,
+        "concurrency": 4,
+        "first_ms": 166.806219,
+        "improvement_percent": 27.76487787904359,
+        "scheduler_ms": 120.492676
+      },
+      {
+        "chunk_mib": 4,
+        "concurrency": 8,
+        "first_ms": 142.855326,
+        "improvement_percent": 24.762164625209696,
+        "scheduler_ms": 107.481255
+      },
+      {
+        "chunk_mib": 4,
+        "concurrency": 16,
+        "first_ms": 143.981251,
+        "improvement_percent": 41.78344512369877,
+        "scheduler_ms": 83.820924
+      },
+      {
+        "chunk_mib": 16,
+        "concurrency": 1,
+        "first_ms": 180.002645,
+        "improvement_percent": 23.542257948487368,
+        "scheduler_ms": 137.625958
+      },
+      {
+        "chunk_mib": 16,
+        "concurrency": 4,
+        "first_ms": 151.615675,
+        "improvement_percent": 20.257770181084517,
+        "scheduler_ms": 120.90172
+      },
+      {
+        "chunk_mib": 16,
+        "concurrency": 8,
+        "first_ms": 155.40179,
+        "improvement_percent": 34.846990501203365,
+        "scheduler_ms": 101.248943
+      },
+      {
+        "chunk_mib": 16,
+        "concurrency": 16,
+        "first_ms": 160.559247,
+        "improvement_percent": 32.84237251062842,
+        "scheduler_ms": 107.827781
+      }
+    ],
+    "median_improvement_percent": 30.303625194836005,
+    "scheduler_faster_count": 12
+  },
+  "large_chunk_probe": {
+    "results": [
+      {
+        "artifact_mib": 32,
+        "chunk_mib": 16,
+        "concurrency": 1,
+        "first_ms": 728.784877,
+        "improvement_percent": 29.821251765629054,
+        "scheduler_ms": 511.452104
+      },
+      {
+        "artifact_mib": 32,
+        "chunk_mib": 16,
+        "concurrency": 4,
+        "first_ms": 423.772937,
+        "improvement_percent": 40.223093340196,
+        "scheduler_ms": 253.318353
+      },
+      {
+        "artifact_mib": 32,
+        "chunk_mib": 16,
+        "concurrency": 8,
+        "first_ms": 473.516676,
+        "improvement_percent": 36.08638801139075,
+        "scheduler_ms": 302.641611
+      },
+      {
+        "artifact_mib": 32,
+        "chunk_mib": 16,
+        "concurrency": 16,
+        "first_ms": 414.749757,
+        "improvement_percent": 4.018028393926219,
+        "scheduler_ms": 398.084994
+      }
+    ],
+    "status": "targeted synthetic run because full 32 MiB matrix exceeded the isolated runner time budget"
+  },
+  "matrix": {
+    "artifact_mib": 8,
+    "chunk_mib": [
+      1,
+      4,
+      16
+    ],
+    "concurrency": [
+      1,
+      4,
+      8,
+      16
+    ],
+    "note": "8 MiB artifact keeps the full 72-case matrix bounded; 16 MiB chunk behavior is additionally exercised with a targeted 32 MiB artifact probe.",
+    "raw_evidence": "Retained in CASER SandCloud session output; regenerate with the documented swarmbench --matrix command.",
+    "result_count": 72,
+    "scenarios": [
+      "single",
+      "multi",
+      "heterogeneous"
+    ],
+    "strategies": [
+      "first",
+      "scheduler"
+    ]
+  },
+  "metric_sanity_probes": {
+    "cache_50_percent": {
+      "artifact_completion_ms": 87.717338,
+      "cache_hit_bytes": 4194304,
+      "cache_hit_ratio": 0.5,
+      "cache_miss_bytes": 4194304,
+      "origin_bytes": 0,
+      "peer_bytes": 4194304
+    },
+    "origin_fallback": {
+      "artifact_completion_ms": 49.141126,
+      "cache_hit_bytes": 0,
+      "cache_hit_ratio": 0,
+      "cache_miss_bytes": 4194304,
+      "fallbacks": 4,
+      "origin_bytes": 4194304,
+      "peer_bytes": 0,
+      "peer_failures": 4,
+      "retries": 0,
+      "verification_failures": 0
+    }
+  },
+  "privacy": "No prompt, user content, model name, hostname, credential, chunk hash, or URL is recorded in the committed summary.",
+  "real_rtx_lan_validation": "UNVERIFIED",
+  "regression_thresholds": "NONE - baseline is synthetic and not yet stable enough for thresholds",
+  "schema_version": 1,
+  "status": "exploratory-synthetic-baseline"
+}
