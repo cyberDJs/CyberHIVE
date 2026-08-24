@@ -34,6 +34,7 @@ type PeerAssumption struct {
 	PeerID                       string  `json:"peer_id"`
 	NominalThroughputBytesSecond float64 `json:"nominal_throughput_bytes_per_second"`
 	NominalRTTMS                 float64 `json:"nominal_rtt_ms"`
+	MaxConcurrentUploads         int     `json:"max_concurrent_uploads,omitempty"`
 	Fails                        bool    `json:"fails"`
 	Role                         string  `json:"role"`
 }
@@ -59,17 +60,19 @@ type Result struct {
 }
 
 type profile struct {
-	id         string
-	baseURL    string
-	throughput float64
-	rtt        time.Duration
-	fail       bool
-	origin     bool
+	id            string
+	baseURL       string
+	throughput    float64
+	rtt           time.Duration
+	maxConcurrent int
+	fail          bool
+	origin        bool
 }
 
 type syntheticClient struct {
 	data     map[string][]byte
 	profiles map[string]profile
+	gates    map[string]chan struct{}
 }
 
 func (c *syntheticClient) Fetch(ctx context.Context, baseURL, hash string) ([]byte, error) {
@@ -80,6 +83,14 @@ func (c *syntheticClient) Fetch(ctx context.Context, baseURL, hash string) ([]by
 	data, ok := c.data[hash]
 	if !ok {
 		return nil, fmt.Errorf("unknown chunk %s", hash)
+	}
+	if gate := c.gates[baseURL]; gate != nil {
+		select {
+		case gate <- struct{}{}:
+			defer func() { <-gate }()
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	delay := p.rtt
 	if p.throughput > 0 {
@@ -171,10 +182,22 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if origin != nil {
 		profileMap[origin.baseURL] = *origin
 	}
-	client := &syntheticClient{data: chunkData, profiles: profileMap}
+	gates := make(map[string]chan struct{}, len(profileMap))
+	for baseURL, p := range profileMap {
+		if p.maxConcurrent > 0 {
+			gates[baseURL] = make(chan struct{}, p.maxConcurrent)
+		}
+	}
+	client := &syntheticClient{data: chunkData, profiles: profileMap, gates: gates}
 	inventory := peer.NewInventory(peers)
 
 	measured, outputInputs := measureSchedulerInputs(ctx, client, profiles, m)
+	if cfg.Scenario == "contended-multi" {
+		// This acceptance scenario isolates scheduler spreading from wall-clock
+		// probe jitter by feeding the controlled synthetic profile as stable
+		// telemetry. Other scenarios continue to exercise timed probes.
+		measured, outputInputs = controlledSchedulerInputs(profiles)
+	}
 	var source peer.Source = inventory
 	if cfg.Strategy == "scheduler" {
 		source = scheduler.NewSource(inventory, measured, 30*time.Second)
@@ -253,7 +276,7 @@ func validate(cfg Config) error {
 		return fmt.Errorf("unsupported strategy %q", cfg.Strategy)
 	}
 	switch cfg.Scenario {
-	case "single", "multi", "heterogeneous", "origin-fallback":
+	case "single", "multi", "contended-multi", "heterogeneous", "origin-fallback":
 		return nil
 	default:
 		return fmt.Errorf("unsupported scenario %q", cfg.Scenario)
@@ -278,6 +301,11 @@ func scenarioProfiles(name string) ([]profile, *profile) {
 			{id: "peer-a", baseURL: "peer-a", throughput: 1024 * mib, rtt: 500 * time.Microsecond},
 			{id: "peer-b", baseURL: "peer-b", throughput: 1024 * mib, rtt: 500 * time.Microsecond},
 		}, nil
+	case "contended-multi":
+		return []profile{
+			{id: "peer-a", baseURL: "peer-a", throughput: 64 * mib, rtt: 2 * time.Millisecond, maxConcurrent: 1},
+			{id: "peer-b", baseURL: "peer-b", throughput: 64 * mib, rtt: 2 * time.Millisecond, maxConcurrent: 1},
+		}, nil
 	case "origin-fallback":
 		origin := &profile{id: "origin", baseURL: "origin", throughput: 512 * mib, rtt: 2 * time.Millisecond, origin: true}
 		return []profile{{id: "peer-a", baseURL: "peer-a", throughput: 512 * mib, rtt: time.Millisecond, fail: true}}, origin
@@ -290,6 +318,7 @@ func scenarioProfiles(name string) ([]profile, *profile) {
 }
 
 func measureSchedulerInputs(ctx context.Context, client *syntheticClient, profiles []profile, m manifest.Manifest) (scheduler.StaticTelemetry, []SchedulerInput) {
+	const probeCount = 5
 	measured := make(scheduler.StaticTelemetry, len(profiles))
 	out := make([]SchedulerInput, 0, len(profiles))
 	if len(m.Chunks) == 0 {
@@ -300,21 +329,31 @@ func measureSchedulerInputs(ctx context.Context, client *syntheticClient, profil
 		if p.fail {
 			continue
 		}
-		rtt, err := client.probeRTT(ctx, p.baseURL)
-		if err != nil {
+		rtts := make([]time.Duration, 0, probeCount)
+		throughputs := make([]float64, 0, probeCount)
+		for probe := 0; probe < probeCount; probe++ {
+			rtt, err := client.probeRTT(ctx, p.baseURL)
+			if err != nil {
+				continue
+			}
+			started := time.Now()
+			data, err := client.Fetch(ctx, p.baseURL, sample.SHA256)
+			elapsed := time.Since(started)
+			if err != nil || len(data) == 0 {
+				continue
+			}
+			transfer := elapsed - rtt
+			if transfer <= 0 {
+				transfer = elapsed
+			}
+			rtts = append(rtts, rtt)
+			throughputs = append(throughputs, float64(len(data))/transfer.Seconds())
+		}
+		if len(rtts) == 0 || len(throughputs) == 0 {
 			continue
 		}
-		started := time.Now()
-		data, err := client.Fetch(ctx, p.baseURL, sample.SHA256)
-		elapsed := time.Since(started)
-		if err != nil || len(data) == 0 {
-			continue
-		}
-		transfer := elapsed - rtt
-		if transfer <= 0 {
-			transfer = elapsed
-		}
-		bps := float64(len(data)) / transfer.Seconds()
+		rtt := medianDuration(rtts)
+		bps := medianFloat64(throughputs)
 		measured[p.id] = scheduler.Telemetry{
 			ThroughputBytesPerSecond: bps,
 			RTT:                      rtt,
@@ -323,6 +362,39 @@ func measureSchedulerInputs(ctx context.Context, client *syntheticClient, profil
 			ObservedAt:               time.Now(),
 		}
 		out = append(out, SchedulerInput{PeerID: p.id, MeasuredThroughputBytesSecond: bps, MeasuredRTTMS: float64(rtt) / float64(time.Millisecond)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].PeerID < out[j].PeerID })
+	return measured, out
+}
+
+func medianDuration(values []time.Duration) time.Duration {
+	cp := append([]time.Duration(nil), values...)
+	sort.Slice(cp, func(i, j int) bool { return cp[i] < cp[j] })
+	return cp[len(cp)/2]
+}
+
+func medianFloat64(values []float64) float64 {
+	cp := append([]float64(nil), values...)
+	sort.Float64s(cp)
+	return cp[len(cp)/2]
+}
+
+func controlledSchedulerInputs(profiles []profile) (scheduler.StaticTelemetry, []SchedulerInput) {
+	measured := make(scheduler.StaticTelemetry, len(profiles))
+	out := make([]SchedulerInput, 0, len(profiles))
+	now := time.Now()
+	for _, p := range profiles {
+		if p.fail || p.origin {
+			continue
+		}
+		measured[p.id] = scheduler.Telemetry{
+			ThroughputBytesPerSecond: p.throughput,
+			RTT:                      p.rtt,
+			UploadUtilization:        0,
+			Locality:                 scheduler.LocalityLAN,
+			ObservedAt:               now,
+		}
+		out = append(out, SchedulerInput{PeerID: p.id, MeasuredThroughputBytesSecond: p.throughput, MeasuredRTTMS: float64(p.rtt) / float64(time.Millisecond)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].PeerID < out[j].PeerID })
 	return measured, out
@@ -345,7 +417,7 @@ func seedCache(destination, source *cas.Store, m manifest.Manifest, percent int)
 func assumptions(peers []profile, origin *profile) []PeerAssumption {
 	out := make([]PeerAssumption, 0, len(peers)+1)
 	for _, p := range peers {
-		out = append(out, PeerAssumption{PeerID: p.id, NominalThroughputBytesSecond: p.throughput, NominalRTTMS: float64(p.rtt) / float64(time.Millisecond), Fails: p.fail, Role: "peer"})
+		out = append(out, PeerAssumption{PeerID: p.id, NominalThroughputBytesSecond: p.throughput, NominalRTTMS: float64(p.rtt) / float64(time.Millisecond), MaxConcurrentUploads: p.maxConcurrent, Fails: p.fail, Role: "peer"})
 	}
 	if origin != nil {
 		out = append(out, PeerAssumption{PeerID: origin.id, NominalThroughputBytesSecond: origin.throughput, NominalRTTMS: float64(origin.rtt) / float64(time.Millisecond), Fails: origin.fail, Role: "origin"})

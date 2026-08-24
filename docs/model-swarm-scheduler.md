@@ -67,3 +67,21 @@ The tests prove algorithmic behavior, **not real-world performance improvement**
 - global scheduling across unrelated Hives;
 - learned/ML ranking;
 - changing artifact identity or the Model Swarm data path.
+
+## Acceptance follow-up — 2026-08-24
+
+Issue #4's remaining acceptance checks are covered by a focused child change without modifying the production scheduler algorithm:
+
+- ranking tests now exercise at least three peers and assert that normalized throughput, latency, load, locality, affinity and final score remain inspectable;
+- a mutable upstream-source test proves a disappeared peer is removed from the next ranking instead of being retained in scheduler state;
+- equivalent-peer ordering is re-evaluated deterministically for the same chunk;
+- the synthetic benchmark's timed telemetry probe uses the median of five samples to reduce short-run scheduler jitter;
+- a dedicated `contended-multi` scenario models two equally suitable peers with 64 MiB/s aggregate capacity, 2 ms RTT and one concurrent upload slot each.
+
+For `contended-multi`, stable controlled telemetry inputs are intentionally used instead of wall-clock probes. This isolates the scheduler's source-spreading behavior from runner timing noise. The existing heterogeneous benchmark continues to exercise timed measured inputs.
+
+A five-run 8 MiB / 1 MiB-chunk / concurrency-4 acceptance probe recorded a first-peer median of about 211.2 ms and scheduler median of about 129.1 ms, approximately 38.9% improvement. The scheduler transferred 4 MiB from each of the two peers in every recorded run.
+
+These are synthetic acceptance results, **not** production LAN or RTX-class throughput claims. Real-network validation remains `UNVERIFIED`, and this follow-up does not define a production regression threshold.
+
+Compact evidence is stored in `benchmarks/results/swarm-scheduler-acceptance-2026-08-24.json`.

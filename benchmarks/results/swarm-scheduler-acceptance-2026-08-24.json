@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "date": "2026-08-24",
+  "status": "scheduler-acceptance-synthetic-evidence",
+  "environment": "isolated-linux-amd64-runner",
+  "scenario": {
+    "name": "contended-multi",
+    "artifact_mib": 8,
+    "chunk_mib": 1,
+    "concurrency": 4,
+    "peers": [
+      {
+        "peer_id": "peer-a",
+        "throughput_mib_s": 64,
+        "rtt_ms": 2,
+        "max_concurrent_uploads": 1
+      },
+      {
+        "peer_id": "peer-b",
+        "throughput_mib_s": 64,
+        "rtt_ms": 2,
+        "max_concurrent_uploads": 1
+      }
+    ],
+    "scheduler_telemetry": "controlled identical synthetic profile inputs to isolate source-spreading behavior from wall-clock probe jitter"
+  },
+  "first_peer_ms": [
+    307.135104,
+    408.068033,
+    211.164187,
+    201.523917,
+    190.378279
+  ],
+  "scheduler_ms": [
+    168.396871,
+    129.496497,
+    129.12498,
+    121.295742,
+    122.305238
+  ],
+  "first_peer_median_ms": 211.164187,
+  "scheduler_median_ms": 129.12498,
+  "median_improvement_percent": 38.85090941107357,
+  "scheduler_peer_bytes_by_run": [
+    {
+      "peer-a": 4194304,
+      "peer-b": 4194304
+    },
+    {
+      "peer-a": 4194304,
+      "peer-b": 4194304
+    },
+    {
+      "peer-a": 4194304,
+      "peer-b": 4194304
+    },
+    {
+      "peer-a": 4194304,
+      "peer-b": 4194304
+    },
+    {
+      "peer-a": 4194304,
+      "peer-b": 4194304
+    }
+  ],
+  "scheduler_used_multiple_peers_every_run": true,
+  "production_scheduler_code_changed": false,
+  "real_lan_validation": "UNVERIFIED",
+  "interpretation": "Acceptance evidence for multi-peer source spreading under controlled aggregate-capacity contention; not a production throughput or SLO claim."
+}
