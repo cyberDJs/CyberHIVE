@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cyberDJs/CyberHIVE/internal/cas"
 	"github.com/cyberDJs/CyberHIVE/internal/manifest"
@@ -50,6 +51,7 @@ type Fetcher struct {
 	concurrency   int
 	peerRounds    int
 	originBaseURL string
+	observer      Observer
 }
 
 func NewFetcher(store *cas.Store, source peer.Source, client ChunkClient, concurrency int, options ...Option) (*Fetcher, error) {
@@ -71,7 +73,7 @@ func NewFetcher(store *cas.Store, source peer.Source, client ChunkClient, concur
 	return f, nil
 }
 
-func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, outputPath string) error {
+func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, outputPath string) (resultErr error) {
 	if ctx == nil {
 		return errors.New("context is required")
 	}
@@ -80,6 +82,14 @@ func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, output
 	}
 	if outputPath == "" {
 		return errors.New("output path is required")
+	}
+
+	started := time.Now()
+	if f.observer != nil {
+		f.observer.ArtifactStarted(m.Size)
+		defer func() {
+			f.observer.ArtifactFinished(time.Since(started), resultErr == nil)
+		}()
 	}
 
 	parentCtx := ctx
@@ -94,7 +104,13 @@ func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, output
 		defer wg.Done()
 		for chunk := range jobs {
 			if f.store.HasVerified(chunk.SHA256) {
+				if f.observer != nil {
+					f.observer.CacheHit(chunk.Size)
+				}
 				continue
+			}
+			if f.observer != nil {
+				f.observer.CacheMiss(chunk.Size)
 			}
 			if err := f.fetchChunk(workCtx, chunk); err != nil {
 				if parentCtx.Err() != nil {
@@ -141,15 +157,23 @@ func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, output
 func (f *Fetcher) fetchChunk(ctx context.Context, chunk manifest.Chunk) error {
 	candidates := f.source.Candidates(chunk.SHA256)
 	var errs []error
+	attempted := false
 
 	for round := 0; round < f.peerRounds && len(candidates) > 0; round++ {
+		if round > 0 && f.observer != nil {
+			f.observer.Retry()
+		}
 		start := round % len(candidates)
 		for step := 0; step < len(candidates); step++ {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
 			candidate := candidates[(start+step)%len(candidates)]
-			data, err := f.fetchVerified(ctx, candidate.BaseURL, chunk)
+			if attempted && f.observer != nil {
+				f.observer.Fallback()
+			}
+			attempted = true
+			data, err := f.fetchVerified(ctx, candidate.ID, candidate.BaseURL, SourcePeer, chunk)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("peer %s round %d: %w", candidate.ID, round+1, err))
 				continue
@@ -165,7 +189,10 @@ func (f *Fetcher) fetchChunk(ctx context.Context, chunk manifest.Chunk) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		data, err := f.fetchVerified(ctx, f.originBaseURL, chunk)
+		if attempted && f.observer != nil {
+			f.observer.Fallback()
+		}
+		data, err := f.fetchVerified(ctx, "origin", f.originBaseURL, SourceOrigin, chunk)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("origin: %w", err))
 		} else {
@@ -182,18 +209,36 @@ func (f *Fetcher) fetchChunk(ctx context.Context, chunk manifest.Chunk) error {
 	return fmt.Errorf("all sources failed for chunk %s: %w", chunk.SHA256, errors.Join(errs...))
 }
 
-func (f *Fetcher) fetchVerified(ctx context.Context, baseURL string, chunk manifest.Chunk) ([]byte, error) {
+func (f *Fetcher) fetchVerified(ctx context.Context, sourceID, baseURL string, kind SourceKind, chunk manifest.Chunk) ([]byte, error) {
+	started := time.Now()
 	data, err := f.client.Fetch(ctx, baseURL, chunk.SHA256)
+	event := AttemptEvent{SourceID: sourceID, Kind: kind, Duration: time.Since(started)}
+	if len(data) > 0 {
+		event.Bytes = int64(len(data))
+	}
 	if err != nil {
+		f.observeAttempt(event)
 		return nil, err
 	}
 	if int64(len(data)) != chunk.Size {
+		event.VerificationFailure = true
+		f.observeAttempt(event)
 		return nil, fmt.Errorf("chunk size mismatch: expected %d got %d", chunk.Size, len(data))
 	}
 	if actual := cas.Hash(data); actual != chunk.SHA256 {
+		event.VerificationFailure = true
+		f.observeAttempt(event)
 		return nil, fmt.Errorf("chunk hash mismatch: expected %s got %s", chunk.SHA256, actual)
 	}
+	event.Success = true
+	f.observeAttempt(event)
 	return data, nil
+}
+
+func (f *Fetcher) observeAttempt(event AttemptEvent) {
+	if f.observer != nil {
+		f.observer.Attempt(event)
+	}
 }
 
 func (f *Fetcher) assemble(ctx context.Context, m manifest.Manifest, outputPath string) error {
