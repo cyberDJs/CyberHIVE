@@ -12,9 +12,7 @@ import (
 
 var ErrInvalidHash = errors.New("invalid sha256 hash")
 
-type Store struct {
-	root string
-}
+type Store struct{ root string }
 
 func New(root string) (*Store, error) {
 	if root == "" {
@@ -26,10 +24,7 @@ func New(root string) (*Store, error) {
 	return &Store{root: root}, nil
 }
 
-func Hash(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
+func Hash(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 
 func ValidateHash(hash string) error {
 	if len(hash) != 64 {
@@ -58,6 +53,12 @@ func (s *Store) Has(hash string) bool {
 	return err == nil && st.Mode().IsRegular()
 }
 
+// HasVerified reports whether a regular CAS object exists and its content matches its address.
+func (s *Store) HasVerified(hash string) bool {
+	_, err := s.Read(hash)
+	return err == nil
+}
+
 func (s *Store) Put(hash string, data []byte) error {
 	if err := ValidateHash(hash); err != nil {
 		return err
@@ -69,7 +70,7 @@ func (s *Store) Put(hash string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	if s.Has(hash) {
+	if s.HasVerified(hash) {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
@@ -97,7 +98,7 @@ func (s *Store) Put(hash string, data []byte) error {
 		return fmt.Errorf("close temp chunk: %w", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		if s.Has(hash) {
+		if s.HasVerified(hash) {
 			return nil
 		}
 		return fmt.Errorf("commit chunk: %w", err)
