@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/cyberDJs/CyberHIVE/internal/cas"
@@ -19,24 +20,61 @@ type ChunkClient interface {
 	Fetch(ctx context.Context, baseURL, hash string) ([]byte, error)
 }
 
-type Fetcher struct {
-	store       *cas.Store
-	source      peer.Source
-	client      ChunkClient
-	concurrency int
+type Option func(*Fetcher) error
+
+func WithOrigin(baseURL string) Option {
+	return func(f *Fetcher) error {
+		baseURL = strings.TrimSpace(baseURL)
+		if baseURL == "" {
+			return errors.New("origin base URL is required")
+		}
+		f.originBaseURL = baseURL
+		return nil
+	}
 }
 
-func NewFetcher(store *cas.Store, source peer.Source, client ChunkClient, concurrency int) (*Fetcher, error) {
+func WithPeerRounds(rounds int) Option {
+	return func(f *Fetcher) error {
+		if rounds <= 0 {
+			return errors.New("peer retry rounds must be positive")
+		}
+		f.peerRounds = rounds
+		return nil
+	}
+}
+
+type Fetcher struct {
+	store         *cas.Store
+	source        peer.Source
+	client        ChunkClient
+	concurrency   int
+	peerRounds    int
+	originBaseURL string
+}
+
+func NewFetcher(store *cas.Store, source peer.Source, client ChunkClient, concurrency int, options ...Option) (*Fetcher, error) {
 	if store == nil || source == nil || client == nil {
 		return nil, errors.New("store, peer source and client are required")
 	}
 	if concurrency <= 0 {
 		concurrency = 4
 	}
-	return &Fetcher{store: store, source: source, client: client, concurrency: concurrency}, nil
+	f := &Fetcher{store: store, source: source, client: client, concurrency: concurrency, peerRounds: 1}
+	for _, option := range options {
+		if option == nil {
+			continue
+		}
+		if err := option(f); err != nil {
+			return nil, err
+		}
+	}
+	return f, nil
 }
 
 func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, outputPath string) error {
+	if ctx == nil {
+		return errors.New("context is required")
+	}
 	if err := m.Validate(); err != nil {
 		return fmt.Errorf("validate manifest: %w", err)
 	}
@@ -44,7 +82,8 @@ func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, output
 		return errors.New("output path is required")
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
+	parentCtx := ctx
+	workCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	jobs := make(chan manifest.Chunk)
@@ -54,10 +93,13 @@ func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, output
 	worker := func() {
 		defer wg.Done()
 		for chunk := range jobs {
-			if f.store.Has(chunk.SHA256) {
+			if f.store.HasVerified(chunk.SHA256) {
 				continue
 			}
-			if err := f.fetchChunk(ctx, chunk); err != nil {
+			if err := f.fetchChunk(workCtx, chunk); err != nil {
+				if parentCtx.Err() != nil {
+					return
+				}
 				select {
 				case errCh <- err:
 					cancel()
@@ -77,7 +119,7 @@ func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, output
 		defer close(jobs)
 		for _, chunk := range m.Chunks {
 			select {
-			case <-ctx.Done():
+			case <-workCtx.Done():
 				return
 			case jobs <- chunk:
 			}
@@ -90,41 +132,74 @@ func (f *Fetcher) FetchArtifact(ctx context.Context, m manifest.Manifest, output
 		return err
 	default:
 	}
-	if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
+	if err := parentCtx.Err(); err != nil {
 		return err
 	}
-	return f.assemble(m, outputPath)
+	return f.assemble(parentCtx, m, outputPath)
 }
 
 func (f *Fetcher) fetchChunk(ctx context.Context, chunk manifest.Chunk) error {
 	candidates := f.source.Candidates(chunk.SHA256)
-	if len(candidates) == 0 {
-		return fmt.Errorf("no peer has chunk %s", chunk.SHA256)
-	}
 	var errs []error
-	for _, candidate := range candidates {
-		data, err := f.client.Fetch(ctx, candidate.BaseURL, chunk.SHA256)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("peer %s: %w", candidate.ID, err))
-			continue
+
+	for round := 0; round < f.peerRounds && len(candidates) > 0; round++ {
+		start := round % len(candidates)
+		for step := 0; step < len(candidates); step++ {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			candidate := candidates[(start+step)%len(candidates)]
+			data, err := f.fetchVerified(ctx, candidate.BaseURL, chunk)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("peer %s round %d: %w", candidate.ID, round+1, err))
+				continue
+			}
+			if err := f.store.Put(chunk.SHA256, data); err != nil {
+				return fmt.Errorf("cache chunk from peer %s: %w", candidate.ID, err)
+			}
+			return nil
 		}
-		if int64(len(data)) != chunk.Size {
-			errs = append(errs, fmt.Errorf("peer %s: chunk size mismatch", candidate.ID))
-			continue
-		}
-		if actual := cas.Hash(data); actual != chunk.SHA256 {
-			errs = append(errs, fmt.Errorf("peer %s: chunk hash mismatch", candidate.ID))
-			continue
-		}
-		if err := f.store.Put(chunk.SHA256, data); err != nil {
-			return fmt.Errorf("cache chunk from peer %s: %w", candidate.ID, err)
-		}
-		return nil
 	}
-	return fmt.Errorf("all peers failed for chunk %s: %w", chunk.SHA256, errors.Join(errs...))
+
+	if f.originBaseURL != "" {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		data, err := f.fetchVerified(ctx, f.originBaseURL, chunk)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("origin: %w", err))
+		} else {
+			if err := f.store.Put(chunk.SHA256, data); err != nil {
+				return fmt.Errorf("cache chunk from origin: %w", err)
+			}
+			return nil
+		}
+	}
+
+	if len(candidates) == 0 && f.originBaseURL == "" {
+		return fmt.Errorf("no source has chunk %s", chunk.SHA256)
+	}
+	return fmt.Errorf("all sources failed for chunk %s: %w", chunk.SHA256, errors.Join(errs...))
 }
 
-func (f *Fetcher) assemble(m manifest.Manifest, outputPath string) error {
+func (f *Fetcher) fetchVerified(ctx context.Context, baseURL string, chunk manifest.Chunk) ([]byte, error) {
+	data, err := f.client.Fetch(ctx, baseURL, chunk.SHA256)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) != chunk.Size {
+		return nil, fmt.Errorf("chunk size mismatch: expected %d got %d", chunk.Size, len(data))
+	}
+	if actual := cas.Hash(data); actual != chunk.SHA256 {
+		return nil, fmt.Errorf("chunk hash mismatch: expected %s got %s", chunk.SHA256, actual)
+	}
+	return data, nil
+}
+
+func (f *Fetcher) assemble(ctx context.Context, m manifest.Manifest, outputPath string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	dir := filepath.Dir(outputPath)
 	if dir != "." {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -140,6 +215,10 @@ func (f *Fetcher) assemble(m manifest.Manifest, outputPath string) error {
 
 	h := sha256.New()
 	for _, chunk := range m.Chunks {
+		if err := ctx.Err(); err != nil {
+			_ = tmp.Close()
+			return err
+		}
 		data, err := f.store.Read(chunk.SHA256)
 		if err != nil {
 			_ = tmp.Close()
@@ -164,6 +243,9 @@ func (f *Fetcher) assemble(m manifest.Manifest, outputPath string) error {
 	actual := hex.EncodeToString(h.Sum(nil))
 	if actual != m.SHA256 {
 		return fmt.Errorf("artifact hash mismatch: expected %s got %s", m.SHA256, actual)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := os.Rename(tmpName, outputPath); err != nil {
 		return fmt.Errorf("commit assembled artifact: %w", err)

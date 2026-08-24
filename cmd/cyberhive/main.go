@@ -62,8 +62,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(cfg)
 	case "fetch":
-		if len(args) != 5 {
-			return errors.New("usage: cyberhive fetch <manifest> <peers.json> <cas-dir> <output>")
+		if len(args) != 5 && len(args) != 6 {
+			return errors.New("usage: cyberhive fetch <manifest> <peers.json> <cas-dir> <output> [origin-url]")
 		}
 		m, err := manifest.LoadFile(args[1])
 		if err != nil {
@@ -77,7 +77,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		fetcher, err := swarm.NewFetcher(store, inventory, httptransport.NewClient(30*time.Second), 4)
+		options := []swarm.Option{}
+		if len(args) == 6 {
+			options = append(options, swarm.WithOrigin(args[5]))
+		}
+		fetcher, err := swarm.NewFetcher(store, inventory, httptransport.NewClient(30*time.Second), 4, options...)
 		if err != nil {
 			return err
 		}
@@ -110,6 +114,6 @@ func usage(w io.Writer) error {
 	_, _ = fmt.Fprintln(w, "  cyberhive pack <artifact> <cas-dir>")
 	_, _ = fmt.Fprintln(w, "  cyberhive inventory <peer-id> <base-url> <manifest>")
 	_, _ = fmt.Fprintln(w, "  cyberhive serve <cas-dir> <listen-addr>")
-	_, _ = fmt.Fprintln(w, "  cyberhive fetch <manifest> <peers.json> <cas-dir> <output>")
+	_, _ = fmt.Fprintln(w, "  cyberhive fetch <manifest> <peers.json> <cas-dir> <output> [origin-url]")
 	return nil
 }

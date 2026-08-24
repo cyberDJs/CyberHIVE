@@ -11,8 +11,8 @@ The first vertical slice proves that an artifact can be split into independently
 3. A manifest records ordered chunk metadata and the whole-artifact SHA-256.
 4. `inventory` creates an explicit development peer inventory for the artifact. This is a discovery contract, not a transport contract.
 5. `serve` exposes CAS chunks through the development HTTP transport.
-6. `fetch` loads and strictly validates the manifest and peer inventory, downloads missing chunks concurrently, verifies each hash, writes it to CAS, and tries another candidate peer on failure.
-7. The artifact is assembled only after all chunks are available and the final SHA-256 matches the manifest.
+6. `fetch` loads and strictly validates the manifest and peer inventory, skips only locally verified chunks, downloads missing or corrupt chunks from peers, and can use an explicitly configured origin as the final fallback.
+7. The artifact is assembled into a temporary file and committed only after all chunks are verified, the final SHA-256 matches the manifest, and the request has not been cancelled.
 
 The fetcher depends on a peer `Source` interface and a chunk `Client` interface. The initial explicit JSON inventory and HTTP transport can therefore be replaced independently by coordinator discovery, Dragonfly, QUIC, libp2p, or another approved backend without changing artifact identity.
 
@@ -33,6 +33,23 @@ Development inventory is JSON and intentionally boring:
 ```
 
 Unknown JSON fields, duplicate peer IDs, unsupported URL schemes, and malformed hashes fail closed.
+
+## Reliability v0.1
+
+- Resume is CAS-based: a chunk is skipped only when its stored bytes re-hash to the expected SHA-256.
+- A corrupt local CAS object is treated as missing and may be atomically replaced by verified bytes.
+- Peer attempts are bounded. The default is one pass over candidate peers; callers may configure additional rounds, with the starting peer rotated between rounds.
+- Chunk bytes are size- and SHA-256-verified before they are committed to CAS, so a corrupt peer cannot poison the cache.
+- Origin fallback is optional and explicit. It is attempted only after peer attempts fail; omitting it preserves fully offline operation.
+- Cancellation is checked during download and assembly. Temporary assembly files are removed and the final output path is not committed after cancellation.
+
+CLI origin fallback uses the same development chunk HTTP contract:
+
+```sh
+cyberhive fetch <manifest> <peers.json> <cas-dir> <output> [origin-url]
+```
+
+The origin URL is not auto-discovered and does not enable Internet access by itself.
 
 ## Explicit non-goals for v0.1
 
