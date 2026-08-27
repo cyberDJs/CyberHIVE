@@ -29,6 +29,12 @@ class CollectHostFactsTests(unittest.TestCase):
         finally:
             Path(path).unlink(missing_ok=True)
 
+    def test_parse_os_release(self):
+        parsed = module.parse_os_release('NAME="Ubuntu"\nVERSION_ID="24.04"\nPRETTY_NAME="Ubuntu 24.04.3 LTS"\n')
+        self.assertEqual(parsed["NAME"], "Ubuntu")
+        self.assertEqual(parsed["VERSION_ID"], "24.04")
+        self.assertEqual(parsed["PRETTY_NAME"], "Ubuntu 24.04.3 LTS")
+
 
 if __name__ == "__main__":
     unittest.main()
