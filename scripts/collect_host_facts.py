@@ -8,6 +8,7 @@ import platform
 import shutil
 import socket
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,47 @@ def read_meminfo(path: str = "/proc/meminfo") -> dict[str, int]:
     except (OSError, ValueError):
         pass
     return result
+
+
+def parse_os_release(text: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        result[key] = value.replace(r"\n", "\n").replace(r'\"', '"')
+    return result
+
+
+def read_os_release(path: str = "/etc/os-release") -> dict[str, str]:
+    try:
+        return parse_os_release(Path(path).read_text(encoding="utf-8"))
+    except OSError:
+        return {}
+
+
+def read_cpu_model(path: str = "/proc/cpuinfo") -> str | None:
+    try:
+        for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.lower().startswith("model name") and ":" in line:
+                value = line.split(":", 1)[1].strip()
+                if value:
+                    return value
+    except OSError:
+        pass
+    return platform.processor() or None
+
+
+def read_text(path: str) -> str | None:
+    try:
+        value = Path(path).read_text(encoding="utf-8").strip()
+        return value or None
+    except OSError:
+        return None
 
 
 def parse_nvidia_smi_csv(text: str) -> list[dict[str, Any]]:
@@ -93,9 +135,9 @@ def collect_nvidia() -> dict[str, Any]:
 def collect_host_facts() -> dict[str, Any]:
     mem = read_meminfo()
     uname = platform.uname()
-
+    os_release = read_os_release()
     disk = shutil.disk_usage("/")
-    container_runtimes = {}
+    container_runtimes: dict[str, str | None] = {}
     for name in ("docker", "podman"):
         exe = shutil.which(name)
         if not exe:
@@ -105,17 +147,24 @@ def collect_host_facts() -> dict[str, Any]:
         container_runtimes[name] = out if rc == 0 else f"error: {err or rc}"
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "timestamp_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "hostname": socket.gethostname(),
+        "boot_id": read_text("/proc/sys/kernel/random/boot_id"),
         "os": {
             "system": uname.system,
             "release": uname.release,
             "version": uname.version,
             "machine": uname.machine,
             "python": platform.python_version(),
+            "pretty_name": os_release.get("PRETTY_NAME"),
+            "name": os_release.get("NAME"),
+            "version_id": os_release.get("VERSION_ID"),
+            "image_id": os_release.get("IMAGE_ID"),
+            "image_version": os_release.get("IMAGE_VERSION"),
         },
         "cpu": {
-            "model": platform.processor() or None,
+            "model": read_cpu_model(),
             "logical_cpus": os.cpu_count(),
         },
         "memory": {
