@@ -351,11 +351,13 @@ class NodeIdentityRegistry:
     def revoke(self, node_id: str) -> NodeIdentity:
         identity = self.require(node_id)
         identity.revoke()
+        self._remove_sessions_for_node(node_id)
         return identity
 
     def quarantine(self, node_id: str, reason: str) -> NodeIdentity:
         identity = self.require(node_id)
         identity.quarantine(reason)
+        self._remove_sessions_for_node(node_id)
         return identity
 
     def issue_session(self, node_id: str, ttl_seconds: int = 900) -> tuple[NodeSessionGrant, str]:
@@ -378,7 +380,15 @@ class NodeIdentityRegistry:
 
     def verify_session(self, session_id: str, node_id: str, token: str) -> bool:
         grant = self._sessions.get(session_id)
-        return bool(grant and grant.node_id == node_id and grant.verify(token))
+        if grant is None or grant.node_id != node_id or not grant.verify(token):
+            return False
+        identity = self._by_node_id.get(node_id)
+        return bool(identity and identity.id == grant.identity_id and identity.is_allowed())
+
+    def _remove_sessions_for_node(self, node_id: str) -> None:
+        for session_id, grant in tuple(self._sessions.items()):
+            if grant.node_id == node_id:
+                self._sessions.pop(session_id, None)
 
     def list_identities(self) -> tuple[NodeIdentity, ...]:
         return tuple(self._by_node_id.values())

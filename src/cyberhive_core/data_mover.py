@@ -165,6 +165,7 @@ class DataMover:
         if plan.target_path.exists() and not plan.allow_overwrite:
             raise DataMoveError(f"target exists and overwrite is disabled: {plan.target_path}")
 
+        backup_created = False
         try:
             plan.target_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(plan.source_path, plan.temp_path)
@@ -176,6 +177,7 @@ class DataMover:
                 if not plan.backup_path:
                     raise DataMoveError("target exists but backup path is missing")
                 os.replace(plan.target_path, plan.backup_path)
+                backup_created = True
                 plan.audit.append(f"backup_created:{plan.backup_path}")
 
             os.replace(plan.temp_path, plan.target_path)
@@ -197,6 +199,14 @@ class DataMover:
                     plan.audit.append("temp_removed:true")
                 except OSError as cleanup_exc:
                     plan.audit.append(f"temp_cleanup_failed:{cleanup_exc}")
+            if backup_created and plan.backup_path and plan.backup_path.exists():
+                try:
+                    if plan.target_path.exists():
+                        plan.target_path.unlink()
+                    os.replace(plan.backup_path, plan.target_path)
+                    plan.audit.append(f"backup_restored_on_failure:{plan.target_path}")
+                except OSError as restore_exc:
+                    plan.audit.append(f"backup_restore_failed:{restore_exc}")
             if isinstance(exc, DataMoveError):
                 raise
             raise DataMoveError(str(exc)) from exc

@@ -67,6 +67,31 @@ class DataMoverMvpTests(unittest.TestCase):
         self.assertEqual(plan.status, DataMoveStatus.ROLLED_BACK)
         self.assertEqual(self.target.read_text(encoding="utf-8"), "old target")
 
+
+    def test_overwrite_failure_restores_original_target(self) -> None:
+        class FinalChecksumFailingMover(DataMover):
+            def __init__(self, target: Path) -> None:
+                super().__init__()
+                self.target = target
+
+            def sha256(self, path: Path) -> str:
+                value = super().sha256(path)
+                if Path(path).resolve() == self.target.resolve():
+                    return "forced-final-checksum-mismatch"
+                return value
+
+        self.target.parent.mkdir(parents=True)
+        self.target.write_text("old target", encoding="utf-8")
+        mover = FinalChecksumFailingMover(self.target)
+        plan = mover.plan(self.request(allow_overwrite=True), dry_run=False)
+
+        with self.assertRaises(DataMoveError):
+            mover.execute(plan)
+
+        self.assertEqual(plan.status, DataMoveStatus.FAILED)
+        self.assertEqual(self.target.read_text(encoding="utf-8"), "old target")
+        self.assertTrue(any(item.startswith("backup_restored_on_failure:") for item in plan.audit))
+
     def test_expected_checksum_mismatch_fails(self) -> None:
         with self.assertRaises(DataMoveError):
             self.mover.plan(self.request(expected_source_sha256="bad-checksum"), dry_run=True)

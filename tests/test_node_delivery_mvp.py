@@ -97,6 +97,38 @@ class NodeDeliveryMVPTests(unittest.TestCase):
         self.assertEqual(completed.id, item.id)
         self.assertEqual(item.status, DeliveryStatus.ACKED)
 
+
+    def test_ack_from_different_authenticated_node_is_rejected(self) -> None:
+        self.registry.register(
+            NodeIdentity(
+                node_id="node.alpha",
+                public_key_fingerprint=public_key_fingerprint("ssh-ed25519 node.alpha"),
+                capabilities=("action",),
+            )
+        )
+        alpha_session, alpha_token = self.registry.issue_session("node.alpha", ttl_seconds=600)
+        self.gateway.store_session(
+            session_id=alpha_session.id,
+            node_id="node.alpha",
+            token=alpha_token,
+            expires_at=alpha_session.expires_at,
+        )
+        item = self.enqueue()
+        self.service.dispatch_ready()
+        forged_ack = self.gateway.channel.build_envelope(
+            node_id="node.alpha",
+            session_id=alpha_session.id,
+            direction=ChannelDirection.NODE_TO_CONTROLLER,
+            purpose=ChannelPurpose.ACK,
+            sequence=1,
+            payload={"delivery_id": item.id},
+            session_token=alpha_token,
+        )
+
+        with self.assertRaises(NodeDeliveryError):
+            self.service.receive_ack_envelope(forged_ack)
+        self.assertEqual(item.status, DeliveryStatus.DISPATCHED)
+
     def test_ack_timeout_schedules_retry_and_dispatches_again(self) -> None:
         policy = DeliveryPolicy(max_attempts=3, ack_timeout_seconds=5, initial_backoff_seconds=0)
         item = self.enqueue(policy=policy)

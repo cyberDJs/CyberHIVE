@@ -392,10 +392,21 @@ class ReliableDeliveryQueue:
                 return self._items.get(delivery_id)
         return None
 
-    def mark_acked(self, ack_payload: Mapping[str, Any], *, now: datetime | None = None) -> DeliveryItem:
+    def mark_acked(
+        self,
+        ack_payload: Mapping[str, Any],
+        *,
+        node_id: str | None = None,
+        session_id: str | None = None,
+        now: datetime | None = None,
+    ) -> DeliveryItem:
         item = self.match_ack(ack_payload)
         if item is None:
             raise NodeDeliveryError("ACK does not match a known delivery")
+        if node_id is not None and item.node_id != node_id:
+            raise NodeDeliveryError("ACK authenticated node does not match delivery node")
+        if session_id is not None and item.session_id != session_id:
+            raise NodeDeliveryError("ACK authenticated session does not match delivery session")
         if item.terminal:
             return item
         item.mark_acked("ack received", now=now)
@@ -504,7 +515,7 @@ class NodeDeliveryService:
         if receipt.status != GatewayMessageStatus.RECORDED or receipt.purpose != ChannelPurpose.ACK:
             return None
         payload = receipt.result if isinstance(receipt.result, Mapping) else {}
-        return self.queue.mark_acked(payload, now=now)
+        return self.queue.mark_acked(payload, node_id=receipt.node_id, now=now)
 
     def receive_ack_envelope(self, envelope: SignedChannelEnvelope, *, now: datetime | None = None) -> DeliveryItem | None:
         if envelope.direction != ChannelDirection.NODE_TO_CONTROLLER or envelope.purpose != ChannelPurpose.ACK:

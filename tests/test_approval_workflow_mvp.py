@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
 from cyberhive_core.approval_workflow import (
     ApprovalBroker,
+    ApprovalError,
     ApprovalJournal,
     ApprovalStatus,
     GovernedExecutionController,
@@ -102,6 +105,35 @@ class ApprovalWorkflowMvpTests(unittest.TestCase):
         statuses = {step.name: step.status.value for step in result.run.steps}
         self.assertEqual(statuses["data_moves"], "succeeded")
         self.assertEqual(statuses["prewarm"], "succeeded")
+
+
+    def test_approved_request_expires_before_consumption(self) -> None:
+        plan = self._plan()
+        decision = PolicyGuard().evaluate_plan(plan, PolicyContext(subject="jan", dry_run=False))
+        broker = ApprovalBroker()
+        request = broker.create_request(decision, requested_by="jan")
+        approved = broker.approve(request.id, approver="jan", tokens=request.required_tokens)
+        broker._requests[approved.id] = replace(approved, expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+
+        with self.assertRaises(ApprovalError):
+            broker.context_with_approvals(PolicyContext(subject="jan", dry_run=False), approved.id)
+        self.assertEqual(broker.get(approved.id).status, ApprovalStatus.EXPIRED)
+
+    def test_resume_rejects_approval_bound_to_different_plan(self) -> None:
+        plan = self._plan()
+        other_plan = self._plan()
+        broker = ApprovalBroker()
+        controller = GovernedExecutionController(approval_broker=broker)
+        pending = controller.evaluate_or_execute(plan, context=PolicyContext(subject="jan", dry_run=False))
+        assert pending.approval_request is not None
+        broker.approve(pending.approval_request.id, approver="jan", tokens=pending.approval_request.required_tokens)
+
+        with self.assertRaises(ApprovalError):
+            controller.resume_with_approval(
+                other_plan,
+                approval_request_id=pending.approval_request.id,
+                context=PolicyContext(subject="jan", dry_run=False),
+            )
 
     def test_journal_records_approval_events(self) -> None:
         plan = self._plan()

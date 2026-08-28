@@ -14,11 +14,11 @@ from cyberhive_core.secure_channel import ChannelDirection, ChannelPurpose
 from cyberhive_core.secure_node_gateway import GatewayMessageStatus, GatewayReceipt
 
 
-def _receipt(*, purpose: ChannelPurpose, payload: dict, status: GatewayMessageStatus = GatewayMessageStatus.RECORDED, envelope_id: str = "msg_result") -> GatewayReceipt:
+def _receipt(*, purpose: ChannelPurpose, payload: dict, status: GatewayMessageStatus = GatewayMessageStatus.RECORDED, envelope_id: str = "msg_result", node_id: str = "node.beta") -> GatewayReceipt:
     return GatewayReceipt(
         status=status,
         envelope_id=envelope_id,
-        node_id="node.beta",
+        node_id=node_id,
         purpose=purpose,
         direction=ChannelDirection.NODE_TO_CONTROLLER,
         reason="test receipt",
@@ -128,6 +128,28 @@ class NodeResultReconciliationTests(unittest.TestCase):
         self.assertIsNotNone(record)
         self.assertEqual(record.status, NodeTaskStatus.ORPHANED)
         self.assertTrue(record.terminal)
+
+
+    def test_cross_node_result_becomes_orphan_and_does_not_mutate_record(self) -> None:
+        queue = ReliableDeliveryQueue()
+        item = queue.enqueue_action(node_id="node.beta", session_id="sess_beta", action="prewarm_model")
+        reconciler = NodeResultReconciler()
+        original = reconciler.register_delivery(item)
+
+        record = reconciler.ingest_gateway_receipt(
+            _receipt(
+                purpose=ChannelPurpose.ACTION_RESULT,
+                payload={"delivery_id": item.id, "status": "succeeded"},
+                node_id="node.alpha",
+                envelope_id="msg_alpha_result",
+            )
+        )
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record.status, NodeTaskStatus.ORPHANED)
+        self.assertEqual(record.node_id, "node.alpha")
+        self.assertEqual(original.status, NodeTaskStatus.REGISTERED)
+        self.assertIs(reconciler.require(item.id), original)
 
     def test_non_recorded_receipt_is_ignored(self) -> None:
         reconciler = NodeResultReconciler()

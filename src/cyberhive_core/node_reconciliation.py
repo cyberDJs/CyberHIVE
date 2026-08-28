@@ -419,10 +419,10 @@ class NodeResultReconciler:
         for candidate in candidates:
             delivery_id = self._aliases.get(candidate, candidate)
             record = self._records.get(delivery_id)
-            if record is not None:
+            if record is not None and _receipt_matches_record(record, receipt, payload):
                 return record
 
-        delivery_id = next((candidate for candidate in candidates if candidate.startswith("del_")), None)
+        delivery_id = next((candidate for candidate in candidates if candidate.startswith("del_") and candidate not in self._records), None)
         if delivery_id is None:
             delivery_id = f"orphan_{receipt.envelope_id}"
         record = NodeTaskRecord(
@@ -523,3 +523,12 @@ def _str_or_none(value: Any) -> str | None:
     if isinstance(value, str) and value:
         return value
     return None
+
+
+def _receipt_matches_record(record: NodeTaskRecord, receipt: GatewayReceipt, payload: Mapping[str, Any]) -> bool:
+    if record.node_id != receipt.node_id:
+        return False
+    payload_session_id = _str_or_none(payload.get("session_id"))
+    if payload_session_id is not None and record.session_id is not None and payload_session_id != record.session_id:
+        return False
+    return True

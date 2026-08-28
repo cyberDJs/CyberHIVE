@@ -277,7 +277,8 @@ class ApprovalBroker:
         return request
 
     def _refresh_expiry(self, request: ApprovalRequest) -> ApprovalRequest:
-        if request.status in {ApprovalStatus.OPEN, ApprovalStatus.PARTIALLY_APPROVED} and request.is_expired():
+        expirable = {ApprovalStatus.OPEN, ApprovalStatus.PARTIALLY_APPROVED, ApprovalStatus.APPROVED}
+        if request.status in expirable and request.is_expired():
             updated = _replace_request(request, status=ApprovalStatus.EXPIRED)
             self._requests[request.id] = updated
             self._journal("approval.expired", updated.as_dict())
@@ -356,6 +357,17 @@ class GovernedExecutionController:
         context: PolicyContext | None = None,
     ) -> GovernedExecutionResult:
         base = context or PolicyContext(dry_run=False)
+        request = self.approval_broker.get(approval_request_id)
+        if request.status != ApprovalStatus.APPROVED:
+            raise ApprovalError(f"approval request is not approved: {request.status.value}")
+        if request.subject != base.subject:
+            raise ApprovalError("approval request subject does not match execution context")
+        expected_plan_id = _metadata_string(request.metadata, "plan_id")
+        if expected_plan_id is not None and expected_plan_id != plan.id:
+            raise ApprovalError("approval request is bound to a different plan_id")
+        expected_request_id = _metadata_string(request.metadata, "request_id")
+        if expected_request_id is not None and expected_request_id != plan.request_id:
+            raise ApprovalError("approval request is bound to a different request_id")
         approved_context = self.approval_broker.context_with_approvals(base, approval_request_id)
         return self.evaluate_or_execute(plan, context=approved_context, requested_by=approved_context.subject)
 
@@ -389,6 +401,14 @@ def _governed_result(
         run=run,
         metadata=metadata or {},
     )
+
+
+def _metadata_string(metadata: Mapping[str, Any], key: str) -> str | None:
+    value = metadata.get(key)
+    if value is None:
+        return None
+    text = str(value)
+    return text if text else None
 
 
 def _normalize_tokens(tokens: Iterable[str | ApprovalToken]) -> tuple[str, ...]:

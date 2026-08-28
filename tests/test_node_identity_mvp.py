@@ -87,8 +87,22 @@ class NodeIdentityMvpTests(unittest.TestCase):
         self.assertFalse(registry.verify_session(grant.id, identity.node_id, "wrong"))
 
         registry.revoke(identity.node_id)
+        self.assertFalse(registry.verify_session(grant.id, identity.node_id, token))
         with self.assertRaises(Exception):
             registry.issue_session(identity.node_id)
+
+
+    def test_quarantine_invalidates_existing_sessions(self) -> None:
+        registry = NodeIdentityRegistry()
+        identity = registry.register(
+            NodeIdentity(node_id="node.session.q", public_key_fingerprint=public_key_fingerprint("ssh-ed25519 SESSIONQ"))
+        )
+        grant, token = registry.issue_session(identity.node_id, ttl_seconds=60)
+        self.assertTrue(registry.verify_session(grant.id, identity.node_id, token))
+
+        registry.quarantine(identity.node_id, "suspicious traffic")
+
+        self.assertFalse(registry.verify_session(grant.id, identity.node_id, token))
 
     def test_quarantine_and_restore(self) -> None:
         registry = NodeIdentityRegistry()
