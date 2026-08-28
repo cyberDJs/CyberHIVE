@@ -363,10 +363,14 @@ class GovernedExecutionController:
         if request.subject != base.subject:
             raise ApprovalError("approval request subject does not match execution context")
         expected_plan_id = _metadata_string(request.metadata, "plan_id")
-        if expected_plan_id is not None and expected_plan_id != plan.id:
+        if expected_plan_id is None:
+            raise ApprovalError("approval request is missing plan_id binding")
+        if expected_plan_id != plan.id:
             raise ApprovalError("approval request is bound to a different plan_id")
         expected_request_id = _metadata_string(request.metadata, "request_id")
-        if expected_request_id is not None and expected_request_id != plan.request_id:
+        if expected_request_id is None:
+            raise ApprovalError("approval request is missing request_id binding")
+        if expected_request_id != plan.request_id:
             raise ApprovalError("approval request is bound to a different request_id")
         approved_context = self.approval_broker.context_with_approvals(base, approval_request_id)
         return self.evaluate_or_execute(plan, context=approved_context, requested_by=approved_context.subject)

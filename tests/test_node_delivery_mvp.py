@@ -13,7 +13,7 @@ from cyberhive_core.node_delivery import (
 )
 from cyberhive_core.node_identity import NodeIdentity, NodeIdentityRegistry, public_key_fingerprint
 from cyberhive_core.secure_channel import ChannelDirection, ChannelPurpose, SecureChannel
-from cyberhive_core.secure_node_gateway import SecureNodeGateway, SessionCredentialVault
+from cyberhive_core.secure_node_gateway import GatewayMessageStatus, GatewayReceipt, SecureNodeGateway, SessionCredentialVault
 
 
 class NodeDeliveryMVPTests(unittest.TestCase):
@@ -127,6 +127,25 @@ class NodeDeliveryMVPTests(unittest.TestCase):
 
         with self.assertRaises(NodeDeliveryError):
             self.service.receive_ack_envelope(forged_ack)
+        self.assertEqual(item.status, DeliveryStatus.DISPATCHED)
+
+
+    def test_outbound_ack_receipt_does_not_complete_delivery(self) -> None:
+        item = self.enqueue()
+        self.service.dispatch_ready()
+        receipt = GatewayReceipt(
+            status=GatewayMessageStatus.RECORDED,
+            envelope_id="msg_outbound_ack",
+            node_id="node.beta",
+            purpose=ChannelPurpose.ACK,
+            direction=ChannelDirection.CONTROLLER_TO_NODE,
+            reason="controller-produced ACK should not complete delivery",
+            result={"delivery_id": item.id},
+        )
+
+        completed = self.service.record_gateway_receipt(receipt)
+
+        self.assertIsNone(completed)
         self.assertEqual(item.status, DeliveryStatus.DISPATCHED)
 
     def test_ack_timeout_schedules_retry_and_dispatches_again(self) -> None:

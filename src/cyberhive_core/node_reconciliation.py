@@ -416,11 +416,15 @@ class NodeResultReconciler:
 
     def _find_or_orphan(self, payload: Mapping[str, Any], receipt: GatewayReceipt, *, now: datetime) -> NodeTaskRecord:
         candidates = self._candidate_ids(payload, receipt)
+        untrusted_aliases: set[str] = set()
         for candidate in candidates:
             delivery_id = self._aliases.get(candidate, candidate)
             record = self._records.get(delivery_id)
-            if record is not None and _receipt_matches_record(record, receipt, payload):
-                return record
+            if record is not None:
+                if _receipt_matches_record(record, receipt, payload):
+                    return record
+                untrusted_aliases.add(candidate)
+                untrusted_aliases.add(delivery_id)
 
         delivery_id = next((candidate for candidate in candidates if candidate.startswith("del_") and candidate not in self._records), None)
         if delivery_id is None:
@@ -440,7 +444,7 @@ class NodeResultReconciler:
             error_payload=dict(payload) if receipt.purpose == ChannelPurpose.ERROR else None,
             created_at=now,
             updated_at=now,
-            metadata={"orphan": True, "receipt_id": receipt.id},
+            metadata={"orphan": True, "receipt_id": receipt.id, "untrusted_aliases": tuple(sorted(untrusted_aliases))},
         )
         self._records[delivery_id] = record
         record.record(NodeTaskStatus.ORPHANED, "gateway receipt did not match known delivery", source="gateway", envelope_id=receipt.envelope_id, payload=payload, now=now, force=True)
@@ -476,9 +480,16 @@ class NodeResultReconciler:
             aliases.update(_string_candidates(record.result_payload, "request_id", "correlation_id", "delivery_id", "ack_for", "envelope_id"))
         if record.error_payload:
             aliases.update(_string_candidates(record.error_payload, "request_id", "correlation_id", "delivery_id", "ack_for", "envelope_id"))
+        untrusted_aliases = set(record.metadata.get("untrusted_aliases") or ())
         for alias in aliases:
-            if isinstance(alias, str) and alias:
-                self._aliases[alias] = record.delivery_id
+            if not isinstance(alias, str) or not alias:
+                continue
+            if alias in untrusted_aliases:
+                continue
+            existing = self._aliases.get(alias)
+            if record.status == NodeTaskStatus.ORPHANED and existing is not None and existing != record.delivery_id:
+                continue
+            self._aliases[alias] = record.delivery_id
 
     def _append(self, record: NodeTaskRecord) -> None:
         if self.journal is not None:

@@ -151,6 +151,37 @@ class NodeResultReconciliationTests(unittest.TestCase):
         self.assertEqual(original.status, NodeTaskStatus.REGISTERED)
         self.assertIs(reconciler.require(item.id), original)
 
+
+    def test_cross_node_result_does_not_poison_owner_delivery_alias(self) -> None:
+        queue = ReliableDeliveryQueue()
+        item = queue.enqueue_action(node_id="node.beta", session_id="sess_1", action="prewarm_model")
+        reconciler = NodeResultReconciler()
+        original = reconciler.register_delivery(item)
+
+        forged = reconciler.ingest_gateway_receipt(
+            _receipt(
+                purpose=ChannelPurpose.ACTION_RESULT,
+                payload={"delivery_id": item.id, "status": "succeeded"},
+                node_id="node.alpha",
+                envelope_id="msg_alpha",
+            )
+        )
+        self.assertIsNotNone(forged)
+        self.assertEqual(forged.status, NodeTaskStatus.ORPHANED)
+        self.assertEqual(original.status, NodeTaskStatus.REGISTERED)
+
+        legitimate = reconciler.ingest_gateway_receipt(
+            _receipt(
+                purpose=ChannelPurpose.ACTION_RESULT,
+                payload={"delivery_id": item.id, "status": "succeeded"},
+                node_id="node.beta",
+                envelope_id="msg_beta",
+            )
+        )
+
+        self.assertEqual(legitimate.delivery_id, item.id)
+        self.assertEqual(original.status, NodeTaskStatus.SUCCEEDED)
+
     def test_non_recorded_receipt_is_ignored(self) -> None:
         reconciler = NodeResultReconciler()
 

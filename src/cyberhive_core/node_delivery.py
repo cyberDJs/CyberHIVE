@@ -514,6 +514,8 @@ class NodeDeliveryService:
     def record_gateway_receipt(self, receipt: GatewayReceipt, *, now: datetime | None = None) -> DeliveryItem | None:
         if receipt.status != GatewayMessageStatus.RECORDED or receipt.purpose != ChannelPurpose.ACK:
             return None
+        if receipt.direction != ChannelDirection.NODE_TO_CONTROLLER:
+            return None
         payload = receipt.result if isinstance(receipt.result, Mapping) else {}
         return self.queue.mark_acked(payload, node_id=receipt.node_id, now=now)
 

@@ -135,6 +135,22 @@ class ApprovalWorkflowMvpTests(unittest.TestCase):
                 context=PolicyContext(subject="jan", dry_run=False),
             )
 
+
+    def test_resume_rejects_approval_without_plan_binding_metadata(self) -> None:
+        plan = self._plan()
+        decision = PolicyGuard().evaluate_plan(plan, PolicyContext(subject="jan", dry_run=False))
+        broker = ApprovalBroker()
+        request = broker.create_request(decision, requested_by="jan")
+        broker.approve(request.id, approver="jan", tokens=request.required_tokens)
+        controller = GovernedExecutionController(approval_broker=broker)
+
+        with self.assertRaises(ApprovalError):
+            controller.resume_with_approval(
+                plan,
+                approval_request_id=request.id,
+                context=PolicyContext(subject="jan", dry_run=False),
+            )
+
     def test_journal_records_approval_events(self) -> None:
         plan = self._plan()
         decision = PolicyGuard().evaluate_plan(plan, PolicyContext(subject="jan", dry_run=False))
