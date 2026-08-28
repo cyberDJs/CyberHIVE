@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/execution-run.schema.json",
+  "title": "CyberHIVE Execution Run MVP",
+  "type": "object",
+  "required": ["id", "plan_id", "request_id", "status", "dry_run", "started_at", "steps"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^exec_[a-f0-9]{20}$"},
+    "plan_id": {"type": "string"},
+    "request_id": {"type": "string"},
+    "status": {"type": "string", "enum": ["planned", "running", "succeeded", "failed", "skipped", "dry_run"]},
+    "dry_run": {"type": "boolean"},
+    "started_at": {"type": "string", "format": "date-time"},
+    "completed_at": {"type": ["string", "null"], "format": "date-time"},
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "reason"],
+        "properties": {
+          "name": {"type": "string"},
+          "status": {"type": "string"},
+          "reason": {"type": "string"},
+          "metadata": {"type": "object"}
+        }
+      }
+    },
+    "events_published": {"type": "integer", "minimum": 0},
+    "metadata": {"type": "object"}
+  }
+}

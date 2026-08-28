@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/node-enrollment-request.schema.json",
+  "title": "CyberHIVE Node Enrollment Request",
+  "type": "object",
+  "required": ["id", "proposed_node_id", "public_key_fingerprint", "bootstrap_token_id", "nonce", "proof"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^enr_[a-f0-9]{20}$"},
+    "proposed_node_id": {"type": "string", "minLength": 1},
+    "public_key_fingerprint": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "bootstrap_token_id": {"type": "string", "pattern": "^bt_[a-f0-9]{20}$"},
+    "nonce": {"type": "string", "minLength": 1},
+    "proof": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "capabilities": {"type": "array", "items": {"type": "string"}},
+    "labels": {"type": "object", "additionalProperties": {"type": "string"}},
+    "metadata": {"type": "object"},
+    "requested_by": {"type": "string"},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

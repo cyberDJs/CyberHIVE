@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/orchestration-plan.schema.json",
+  "title": "CyberHIVE Orchestration Plan MVP",
+  "type": "object",
+  "required": ["id", "request_id", "action", "reason", "created_at", "steps"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^orch_[a-f0-9]{20}$"},
+    "request_id": {"type": "string"},
+    "action": {"type": "string", "enum": ["reuse", "route", "prewarm", "queue", "reject"]},
+    "reason": {"type": "string"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "reuse_decision": {"type": ["object", "null"]},
+    "route_decision": {"type": ["object", "null"]},
+    "scheduler_hints": {"type": "array"},
+    "placement": {"type": "object"},
+    "data_moves": {"type": "array"},
+    "prewarm": {"type": "array"},
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "reason"],
+        "properties": {
+          "name": {"type": "string"},
+          "status": {"type": "string"},
+          "reason": {"type": "string"},
+          "metadata": {"type": "object"}
+        }
+      }
+    },
+    "metadata": {"type": "object"}
+  }
+}

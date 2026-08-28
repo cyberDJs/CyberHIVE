@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.ai/schemas/node-reconciliation-record.schema.json",
+  "title": "CyberHIVE Node Reconciliation Record",
+  "type": "object",
+  "required": ["id", "delivery_id", "node_id", "action", "status", "created_at", "updated_at", "history"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "delivery_id": {"type": "string", "minLength": 1},
+    "node_id": {"type": "string", "minLength": 1},
+    "session_id": {"type": ["string", "null"]},
+    "action": {"type": "string", "minLength": 1},
+    "plan_id": {"type": ["string", "null"]},
+    "execution_run_id": {"type": ["string", "null"]},
+    "request_id": {"type": ["string", "null"]},
+    "correlation_id": {"type": ["string", "null"]},
+    "status": {
+      "type": "string",
+      "enum": [
+        "registered",
+        "queued",
+        "dispatched",
+        "retry_wait",
+        "acked",
+        "succeeded",
+        "failed",
+        "expired",
+        "dead_letter",
+        "cancelled",
+        "orphaned",
+        "ignored"
+      ]
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "acknowledged_at": {"type": ["string", "null"], "format": "date-time"},
+    "completed_at": {"type": ["string", "null"], "format": "date-time"},
+    "attempts": {"type": "integer", "minimum": 0},
+    "last_envelope_id": {"type": ["string", "null"]},
+    "result_payload": {"type": ["object", "null"]},
+    "error_payload": {"type": ["object", "null"]},
+    "metadata": {"type": "object"},
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["status", "reason", "source", "created_at"],
+        "properties": {
+          "status": {"type": "string"},
+          "reason": {"type": "string"},
+          "source": {"type": "string"},
+          "created_at": {"type": "string", "format": "date-time"},
+          "envelope_id": {"type": ["string", "null"]},
+          "payload": {"type": "object"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

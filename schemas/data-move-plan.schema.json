@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/data-move-plan.schema.json",
+  "title": "CyberHIVE Data Move Plan",
+  "type": "object",
+  "required": ["id", "object_id", "source_path", "target_path", "operation", "dry_run", "steps", "audit"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "object_id": {"type": "string", "minLength": 1},
+    "source_path": {"type": "string", "minLength": 1},
+    "target_path": {"type": "string", "minLength": 1},
+    "temp_path": {"type": "string"},
+    "backup_path": {"type": "string"},
+    "operation": {"enum": ["copy_then_switch"]},
+    "dry_run": {"type": "boolean"},
+    "allow_overwrite": {"type": "boolean"},
+    "source_size_bytes": {"type": "integer", "minimum": 0},
+    "source_sha256": {"type": "string"},
+    "target_sha256": {"type": "string"},
+    "status": {"enum": ["planned", "executed", "rolled_back", "failed"]},
+    "steps": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "audit": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}

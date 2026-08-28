@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/lan-discovery-advertisement.schema.json",
+  "title": "CyberHIVE LAN Discovery Advertisement",
+  "type": "object",
+  "required": ["proposed_node_id", "endpoints", "observed_at"],
+  "properties": {
+    "id": {"type": "string"},
+    "proposed_node_id": {"type": "string", "minLength": 1},
+    "endpoints": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+    "capabilities": {"type": "array", "items": {"type": "string"}},
+    "source": {"type": "string", "enum": ["lan_broadcast", "mdns", "static_hint", "manual"]},
+    "labels": {"type": "object", "additionalProperties": {"type": "string"}},
+    "metadata": {"type": "object"},
+    "public_key_hint": {"type": ["string", "null"]},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "lan_safe": {"type": "boolean"}
+  },
+  "additionalProperties": false
+}

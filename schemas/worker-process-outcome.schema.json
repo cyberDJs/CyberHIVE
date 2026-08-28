@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CyberHIVE Worker Process Outcome",
+  "type": "object",
+  "required": [
+    "id",
+    "envelope_id",
+    "node_id",
+    "status",
+    "reason",
+    "verification"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "envelope_id": {
+      "type": "string"
+    },
+    "node_id": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "acked",
+        "handled",
+        "denied",
+        "failed"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "verification": {
+      "type": "object"
+    },
+    "action_result": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  }
+}

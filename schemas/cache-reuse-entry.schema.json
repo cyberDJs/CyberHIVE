@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/cache-reuse-entry.schema.json",
+  "title": "CyberHIVE Cache Reuse Entry",
+  "type": "object",
+  "required": ["key", "kind", "created_at", "expires_at", "sensitivity", "scope"],
+  "properties": {
+    "key": {"type": "string", "minLength": 16},
+    "kind": {
+      "type": "string",
+      "enum": [
+        "exact_result",
+        "semantic",
+        "state",
+        "artifact",
+        "plan",
+        "materialized_view"
+      ]
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "ttl_seconds": {"type": "integer", "minimum": 0},
+    "sensitivity": {
+      "type": "string",
+      "enum": ["public", "internal", "sensitive", "secret"]
+    },
+    "scope": {
+      "type": "string",
+      "enum": ["public", "tenant", "user", "session", "private"]
+    },
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "revision": {"type": ["string", "integer", "null"]},
+    "dependencies": {"type": "array", "items": {"type": "string"}},
+    "hits": {"type": "integer", "minimum": 0},
+    "metadata": {"type": "object"}
+  },
+  "additionalProperties": true
+}
