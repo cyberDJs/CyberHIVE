@@ -1,0 +1,54 @@
+name: CyberHIVE CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+      - 'caser/**'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python tests (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - '3.11'
+          - '3.12'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show Python version
+        run: python --version
+
+      - name: Run unit tests
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests
+
+      - name: Validate current reconciliation and worker runtime gates
+        env:
+          PYTHONPATH: src
+        run: |
+          python scripts/validate_node_reconciliation_mvp.py
+          python scripts/validate_worker_runtime_block_a.py
+
+      - name: Run worker runtime smoke demo
+        env:
+          PYTHONPATH: src
+        run: python scripts/demo_worker_runtime_block_a.py
