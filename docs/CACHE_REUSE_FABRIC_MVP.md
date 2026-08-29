@@ -87,3 +87,10 @@ It does not optimize directly for provider pricing.
 - add semantic vector lookup,
 - expose cache decisions to Wisdom and Optimizer,
 - support materialized views for Knowledge and Inventory queries.
+
+## Block L deterministic hashing hardening
+
+Unordered collections are canonicalized before hashing. `set` and `frozenset`
+values are recursively normalized and sorted by their stable JSON
+representation. This prevents equivalent unordered inputs from producing
+process-order-dependent cache keys.

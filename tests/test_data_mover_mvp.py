@@ -76,7 +76,7 @@ class DataMoverMvpTests(unittest.TestCase):
 
             def sha256(self, path: Path) -> str:
                 value = super().sha256(path)
-                if Path(path).resolve() == self.target.resolve():
+                if Path(path) == self.target:
                     return "forced-final-checksum-mismatch"
                 return value
 
