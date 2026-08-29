@@ -314,6 +314,53 @@ class NodeResultReconciliationTests(unittest.TestCase):
         self.assertEqual(legitimate.delivery_id, item.id)
         self.assertEqual(original.status, NodeTaskStatus.SUCCEEDED)
 
+    def test_envelope_identity_mismatch_quarantines_payload_aliases(self) -> None:
+        queue = ReliableDeliveryQueue()
+        owner_item = queue.enqueue_action(node_id="node.beta", session_id="sess_b", action="prewarm_model")
+        other_item = queue.enqueue_action(node_id="node.beta", session_id="sess_a", action="prewarm_model")
+        reconciler = NodeResultReconciler()
+        owner = reconciler.register_delivery(owner_item)
+        other = reconciler.register_delivery(other_item)
+
+        owner.last_envelope_id = "msg_shared_outbound"
+        owner.record(NodeTaskStatus.DISPATCHED, "test dispatch", source="test", envelope_id="msg_shared_outbound", payload={}, force=True)
+        reconciler._index_record(owner)
+
+        forged = reconciler.ingest_gateway_receipt(
+            _receipt(
+                purpose=ChannelPurpose.ACTION_RESULT,
+                payload={"action_request_id": "act-envelope-poison", "status": "accepted", "action": "prewarm_model"},
+                node_id="node.beta",
+                session_id="sess_a",
+                envelope_id="msg_shared_outbound",
+            )
+        )
+
+        self.assertIsNotNone(forged)
+        self.assertEqual(forged.status, NodeTaskStatus.ORPHANED)
+        self.assertIn("act-envelope-poison", forged.metadata["untrusted_aliases"])
+        self.assertEqual(owner.status, NodeTaskStatus.DISPATCHED)
+        self.assertEqual(other.status, NodeTaskStatus.REGISTERED)
+
+        legitimate = reconciler.ingest_gateway_receipt(
+            _receipt(
+                purpose=ChannelPurpose.ACTION_RESULT,
+                payload={
+                    "delivery_id": owner_item.id,
+                    "action_request_id": "act-envelope-poison",
+                    "status": "succeeded",
+                    "action": "prewarm_model",
+                },
+                node_id="node.beta",
+                session_id="sess_b",
+                envelope_id="msg_owner_right_session_after_envelope_poison",
+            )
+        )
+
+        self.assertEqual(legitimate.delivery_id, owner_item.id)
+        self.assertEqual(owner.status, NodeTaskStatus.SUCCEEDED)
+
+
     def test_action_request_alias_is_preserved_after_first_result(self) -> None:
         queue = ReliableDeliveryQueue()
         item = queue.enqueue_action(node_id="node.beta", session_id="sess_1", action="prewarm_model")

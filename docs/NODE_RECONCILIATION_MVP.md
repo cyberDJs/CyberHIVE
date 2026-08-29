@@ -105,3 +105,8 @@ The alias index also preserves learned `action_request_id` values from result/er
 ## Alias quarantine on ownership/session mismatch
 
 When any supplied payload alias resolves to an existing task but fails node or verified-session matching, the reconciler treats the whole payload alias set as untrusted for the resulting orphan. Companion aliases such as `action_request_id` are not learned from mismatched receipts. The owner session can still reconcile the original delivery later by presenting a valid alias under the verified session.
+
+## Envelope-candidate mismatch quarantine
+
+Alias quarantine also applies when the known mismatched candidate comes from gateway-owned receipt identity, including `receipt.envelope_id`, not only when the mismatched value was supplied in the payload. Any known-candidate node/session mismatch causes the complete payload alias set to be excluded from orphan indexing, so unknown companion aliases cannot be learned through envelope identity collisions.
+

@@ -427,9 +427,9 @@ class NodeResultReconciler:
                 continue
 
             if not _receipt_matches_record(record, receipt, payload):
-                if candidate in payload_aliases:
-                    untrusted_aliases.update(payload_aliases)
-                    untrusted_aliases.add(delivery_id)
+                untrusted_aliases.update(payload_aliases)
+                untrusted_aliases.add(candidate)
+                untrusted_aliases.add(delivery_id)
                 continue
 
             if matched_record is None:

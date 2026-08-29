@@ -405,7 +405,9 @@ class ReliableDeliveryQueue:
             raise NodeDeliveryError("ACK does not match a known delivery")
         if node_id is not None and item.node_id != node_id:
             raise NodeDeliveryError("ACK authenticated node does not match delivery node")
-        if session_id is not None and item.session_id != session_id:
+        if session_id is None:
+            raise NodeDeliveryError("ACK authenticated session is required")
+        if item.session_id != session_id:
             raise NodeDeliveryError("ACK authenticated session does not match delivery session")
         if item.terminal:
             return item

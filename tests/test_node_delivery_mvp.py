@@ -173,6 +173,25 @@ class NodeDeliveryMVPTests(unittest.TestCase):
         self.assertIsNone(completed)
         self.assertEqual(item.status, DeliveryStatus.DISPATCHED)
 
+    def test_null_session_ack_receipt_is_rejected(self) -> None:
+        item = self.enqueue()
+        self.service.dispatch_ready()
+        receipt = GatewayReceipt(
+            status=GatewayMessageStatus.RECORDED,
+            envelope_id="msg_null_session_ack",
+            node_id="node.beta",
+            purpose=ChannelPurpose.ACK,
+            direction=ChannelDirection.NODE_TO_CONTROLLER,
+            reason="manually constructed receipt without verified session",
+            result={"delivery_id": item.id},
+            session_id=None,
+        )
+
+        with self.assertRaises(NodeDeliveryError):
+            self.service.record_gateway_receipt(receipt)
+        self.assertEqual(item.status, DeliveryStatus.DISPATCHED)
+
+
     def test_ack_timeout_schedules_retry_and_dispatches_again(self) -> None:
         policy = DeliveryPolicy(max_attempts=3, ack_timeout_seconds=5, initial_backoff_seconds=0)
         item = self.enqueue(policy=policy)
