@@ -416,15 +416,37 @@ class NodeResultReconciler:
 
     def _find_or_orphan(self, payload: Mapping[str, Any], receipt: GatewayReceipt, *, now: datetime) -> NodeTaskRecord:
         candidates = self._candidate_ids(payload, receipt)
+        payload_aliases = set(_payload_candidate_ids(payload))
         untrusted_aliases: set[str] = set()
+        matched_record: NodeTaskRecord | None = None
+
         for candidate in candidates:
             delivery_id = self._aliases.get(candidate, candidate)
             record = self._records.get(delivery_id)
-            if record is not None:
-                if _receipt_matches_record(record, receipt, payload):
-                    return record
+            if record is None:
+                continue
+
+            if not _receipt_matches_record(record, receipt, payload):
+                if candidate in payload_aliases:
+                    untrusted_aliases.add(candidate)
+                    untrusted_aliases.add(delivery_id)
+                continue
+
+            if matched_record is None:
+                matched_record = record
+                continue
+
+            if record.delivery_id != matched_record.delivery_id and candidate in payload_aliases:
                 untrusted_aliases.add(candidate)
                 untrusted_aliases.add(delivery_id)
+                untrusted_aliases.add(matched_record.delivery_id)
+
+        if matched_record is not None and not untrusted_aliases:
+            return matched_record
+
+        if matched_record is not None:
+            untrusted_aliases.add(matched_record.delivery_id)
+            untrusted_aliases.update(payload_aliases)
 
         delivery_id = next((candidate for candidate in candidates if candidate.startswith("del_") and candidate not in self._records), None)
         if delivery_id is None:
@@ -527,6 +549,22 @@ def _summarize(key: str, tasks: Sequence[NodeTaskRecord]) -> RunReconciliationSu
         orphaned=orphaned,
         status=status,
         task_ids=tuple(task.delivery_id for task in tasks),
+    )
+
+
+def _payload_candidate_ids(payload: Mapping[str, Any]) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            _string_candidates(
+                payload,
+                "delivery_id",
+                "correlation_id",
+                "ack_for",
+                "envelope_id",
+                "request_id",
+                "action_request_id",
+            )
+        )
     )
 
 

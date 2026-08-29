@@ -182,6 +182,48 @@ class NodeResultReconciliationTests(unittest.TestCase):
         self.assertEqual(legitimate.delivery_id, item.id)
         self.assertEqual(original.status, NodeTaskStatus.SUCCEEDED)
 
+    def test_mixed_valid_and_conflicting_aliases_do_not_poison_owner_alias(self) -> None:
+        queue = ReliableDeliveryQueue()
+        alpha_item = queue.enqueue_action(node_id="node.alpha", session_id="sess_alpha", action="prewarm_model")
+        beta_item = queue.enqueue_action(node_id="node.beta", session_id="sess_beta", action="prewarm_model")
+        reconciler = NodeResultReconciler()
+        alpha_record = reconciler.register_delivery(alpha_item)
+        beta_record = reconciler.register_delivery(beta_item)
+
+        forged = reconciler.ingest_gateway_receipt(
+            _receipt(
+                purpose=ChannelPurpose.ACTION_RESULT,
+                payload={
+                    "delivery_id": alpha_item.id,
+                    "request_id": beta_item.id,
+                    "status": "succeeded",
+                    "action": "prewarm_model",
+                },
+                node_id="node.alpha",
+                envelope_id="msg_alpha_mixed_aliases",
+            )
+        )
+
+        self.assertIsNotNone(forged)
+        self.assertEqual(forged.status, NodeTaskStatus.ORPHANED)
+        self.assertEqual(alpha_record.status, NodeTaskStatus.REGISTERED)
+        self.assertEqual(beta_record.status, NodeTaskStatus.REGISTERED)
+        self.assertIs(reconciler.require(alpha_item.id), alpha_record)
+        self.assertIs(reconciler.require(beta_item.id), beta_record)
+
+        legitimate_beta = reconciler.ingest_gateway_receipt(
+            _receipt(
+                purpose=ChannelPurpose.ACTION_RESULT,
+                payload={"delivery_id": beta_item.id, "status": "succeeded", "action": "prewarm_model"},
+                node_id="node.beta",
+                envelope_id="msg_beta_legitimate_after_mixed_alias",
+            )
+        )
+
+        self.assertEqual(legitimate_beta.delivery_id, beta_item.id)
+        self.assertEqual(beta_record.status, NodeTaskStatus.SUCCEEDED)
+        self.assertEqual(alpha_record.status, NodeTaskStatus.REGISTERED)
+
     def test_non_recorded_receipt_is_ignored(self) -> None:
         reconciler = NodeResultReconciler()
 
