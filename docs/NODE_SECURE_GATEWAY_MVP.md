@@ -41,3 +41,8 @@ Secrets are in-memory only in this MVP. A later patch should replace `SessionCre
 | either | error | verify and record error |
 
 Unsupported direction/purpose combinations are denied.
+
+
+## Verified session identity in receipts
+
+Gateway receipts include the authenticated `session_id` from the verified signed envelope. Downstream projection layers must prefer this gateway-owned session identity over sender-controlled payload fields. This prevents a valid node session from mutating tasks that were dispatched to another active session of the same node.

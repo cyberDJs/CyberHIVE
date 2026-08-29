@@ -166,6 +166,7 @@ class GatewayReceipt:
     reason: str
     verification: ChannelVerification | None = None
     result: Any | None = None
+    session_id: str | None = None
     created_at: datetime = field(default_factory=_now)
     id: str = field(default_factory=lambda: f"gw_{uuid.uuid4().hex[:20]}")
 
@@ -190,6 +191,7 @@ class GatewayReceipt:
             "status": self.status.value,
             "envelope_id": self.envelope_id,
             "node_id": self.node_id,
+            "session_id": self.session_id,
             "purpose": self.purpose.value,
             "direction": self.direction.value,
             "reason": self.reason,
@@ -305,6 +307,7 @@ class SecureNodeGateway:
                     purpose=envelope.purpose,
                     direction=envelope.direction,
                     reason=str(exc),
+                    session_id=envelope.session_id,
                 )
             )
 
@@ -379,6 +382,7 @@ class SecureNodeGateway:
                 reason=reason,
                 verification=verification,
                 result=result,
+                session_id=self._session_from_verification(verification),
             )
         )
 
@@ -393,6 +397,12 @@ class SecureNodeGateway:
             if envelope.id == verification.envelope_id:
                 return envelope.direction
         return ChannelDirection.NODE_TO_CONTROLLER
+
+    def _session_from_verification(self, verification: ChannelVerification) -> str | None:
+        for envelope in reversed(self.inbox + self.outbox):
+            if envelope.id == verification.envelope_id:
+                return envelope.session_id
+        return None
 
     def _record(self, receipt: GatewayReceipt) -> GatewayReceipt:
         self.receipts.append(receipt)

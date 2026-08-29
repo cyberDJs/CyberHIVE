@@ -6,7 +6,7 @@ from cyberhive_core.secure_channel import ChannelDirection, ChannelPurpose
 from cyberhive_core.secure_node_gateway import GatewayMessageStatus, GatewayReceipt
 
 
-def receipt(purpose: ChannelPurpose, payload: dict, envelope_id: str) -> GatewayReceipt:
+def receipt(purpose: ChannelPurpose, payload: dict, envelope_id: str, session_id: str = "sess.demo") -> GatewayReceipt:
     return GatewayReceipt(
         status=GatewayMessageStatus.RECORDED,
         envelope_id=envelope_id,
@@ -15,6 +15,7 @@ def receipt(purpose: ChannelPurpose, payload: dict, envelope_id: str) -> Gateway
         direction=ChannelDirection.NODE_TO_CONTROLLER,
         reason="demo receipt",
         result=payload,
+        session_id=session_id,
     )
 
 

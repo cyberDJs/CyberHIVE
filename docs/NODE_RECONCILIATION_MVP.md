@@ -93,3 +93,10 @@ This MVP does not:
 ## Next step
 
 The next patch should wire this into execution/control-plane orchestration so delivery, result reconciliation and execution run state are shown as a single controller view.
+
+
+## Session-bound reconciliation
+
+When a registered delivery has a `session_id`, reconciliation requires the verified gateway receipt session to match that delivery session. Payload-provided `session_id` is treated only as a consistency claim; it cannot substitute for the authenticated session retained by `GatewayReceipt`. Mismatched or missing verified sessions become orphaned records and do not mutate the owner task.
+
+The alias index also preserves learned `action_request_id` values from result/error payloads so later terminal updates can correlate through the same action request alias.

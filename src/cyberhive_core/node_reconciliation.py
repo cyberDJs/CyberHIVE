@@ -455,7 +455,7 @@ class NodeResultReconciler:
             delivery_id=delivery_id,
             node_id=receipt.node_id,
             action=str(payload.get("action") or "unknown"),
-            session_id=_str_or_none(payload.get("session_id")),
+            session_id=receipt.session_id or _str_or_none(payload.get("session_id")),
             plan_id=_str_or_none(payload.get("plan_id")),
             execution_run_id=_str_or_none(payload.get("execution_run_id")),
             request_id=_str_or_none(payload.get("request_id")),
@@ -499,9 +499,9 @@ class NodeResultReconciler:
             record.last_envelope_id,
         }
         if record.result_payload:
-            aliases.update(_string_candidates(record.result_payload, "request_id", "correlation_id", "delivery_id", "ack_for", "envelope_id"))
+            aliases.update(_string_candidates(record.result_payload, "request_id", "correlation_id", "delivery_id", "ack_for", "envelope_id", "action_request_id"))
         if record.error_payload:
-            aliases.update(_string_candidates(record.error_payload, "request_id", "correlation_id", "delivery_id", "ack_for", "envelope_id"))
+            aliases.update(_string_candidates(record.error_payload, "request_id", "correlation_id", "delivery_id", "ack_for", "envelope_id", "action_request_id"))
         untrusted_aliases = set(record.metadata.get("untrusted_aliases") or ())
         for alias in aliases:
             if not isinstance(alias, str) or not alias:
@@ -577,7 +577,20 @@ def _str_or_none(value: Any) -> str | None:
 def _receipt_matches_record(record: NodeTaskRecord, receipt: GatewayReceipt, payload: Mapping[str, Any]) -> bool:
     if record.node_id != receipt.node_id:
         return False
+
+    verified_session_id = getattr(receipt, "session_id", None)
     payload_session_id = _str_or_none(payload.get("session_id"))
-    if payload_session_id is not None and record.session_id is not None and payload_session_id != record.session_id:
-        return False
+
+    if record.session_id is not None:
+        if verified_session_id is None:
+            return False
+        if verified_session_id != record.session_id:
+            return False
+
+    if payload_session_id is not None:
+        if verified_session_id is not None and payload_session_id != verified_session_id:
+            return False
+        if record.session_id is not None and payload_session_id != record.session_id:
+            return False
+
     return True

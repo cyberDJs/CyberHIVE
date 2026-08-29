@@ -14,7 +14,15 @@ from cyberhive_core.secure_channel import ChannelDirection, ChannelPurpose
 from cyberhive_core.secure_node_gateway import GatewayMessageStatus, GatewayReceipt
 
 
-def _receipt(*, purpose: ChannelPurpose, payload: dict, status: GatewayMessageStatus = GatewayMessageStatus.RECORDED, envelope_id: str = "msg_result", node_id: str = "node.beta") -> GatewayReceipt:
+def _receipt(
+    *,
+    purpose: ChannelPurpose,
+    payload: dict,
+    status: GatewayMessageStatus = GatewayMessageStatus.RECORDED,
+    envelope_id: str = "msg_result",
+    node_id: str = "node.beta",
+    session_id: str | None = "sess_1",
+) -> GatewayReceipt:
     return GatewayReceipt(
         status=status,
         envelope_id=envelope_id,
@@ -23,6 +31,7 @@ def _receipt(*, purpose: ChannelPurpose, payload: dict, status: GatewayMessageSt
         direction=ChannelDirection.NODE_TO_CONTROLLER,
         reason="test receipt",
         result=payload,
+        session_id=session_id,
     )
 
 
@@ -216,6 +225,7 @@ class NodeResultReconciliationTests(unittest.TestCase):
                 purpose=ChannelPurpose.ACTION_RESULT,
                 payload={"delivery_id": beta_item.id, "status": "succeeded", "action": "prewarm_model"},
                 node_id="node.beta",
+                session_id="sess_beta",
                 envelope_id="msg_beta_legitimate_after_mixed_alias",
             )
         )
@@ -223,6 +233,69 @@ class NodeResultReconciliationTests(unittest.TestCase):
         self.assertEqual(legitimate_beta.delivery_id, beta_item.id)
         self.assertEqual(beta_record.status, NodeTaskStatus.SUCCEEDED)
         self.assertEqual(alpha_record.status, NodeTaskStatus.REGISTERED)
+
+
+    def test_verified_session_mismatch_becomes_orphan_and_preserves_owner_task(self) -> None:
+        queue = ReliableDeliveryQueue()
+        item = queue.enqueue_action(node_id="node.beta", session_id="sess_b", action="prewarm_model")
+        reconciler = NodeResultReconciler()
+        original = reconciler.register_delivery(item)
+
+        forged = reconciler.ingest_gateway_receipt(
+            _receipt(
+                purpose=ChannelPurpose.ACTION_RESULT,
+                payload={"delivery_id": item.id, "status": "succeeded", "action": "prewarm_model"},
+                node_id="node.beta",
+                session_id="sess_a",
+                envelope_id="msg_beta_wrong_session",
+            )
+        )
+
+        self.assertIsNotNone(forged)
+        self.assertEqual(forged.status, NodeTaskStatus.ORPHANED)
+        self.assertEqual(forged.session_id, "sess_a")
+        self.assertEqual(original.status, NodeTaskStatus.REGISTERED)
+        self.assertIs(reconciler.require(item.id), original)
+
+        legitimate = reconciler.ingest_gateway_receipt(
+            _receipt(
+                purpose=ChannelPurpose.ACTION_RESULT,
+                payload={"delivery_id": item.id, "status": "succeeded", "action": "prewarm_model"},
+                node_id="node.beta",
+                session_id="sess_b",
+                envelope_id="msg_beta_right_session",
+            )
+        )
+
+        self.assertEqual(legitimate.delivery_id, item.id)
+        self.assertEqual(original.status, NodeTaskStatus.SUCCEEDED)
+
+    def test_action_request_alias_is_preserved_after_first_result(self) -> None:
+        queue = ReliableDeliveryQueue()
+        item = queue.enqueue_action(node_id="node.beta", session_id="sess_1", action="prewarm_model")
+        reconciler = NodeResultReconciler()
+        original = reconciler.register_delivery(item)
+
+        accepted = reconciler.ingest_gateway_receipt(
+            _receipt(
+                purpose=ChannelPurpose.ACTION_RESULT,
+                payload={"delivery_id": item.id, "action_request_id": "act-1", "status": "accepted"},
+                envelope_id="msg_act_accepted",
+            )
+        )
+        self.assertEqual(accepted.delivery_id, item.id)
+        self.assertEqual(original.status, NodeTaskStatus.ACKED)
+
+        completed = reconciler.ingest_gateway_receipt(
+            _receipt(
+                purpose=ChannelPurpose.ACTION_RESULT,
+                payload={"action_request_id": "act-1", "status": "succeeded"},
+                envelope_id="msg_act_done",
+            )
+        )
+
+        self.assertEqual(completed.delivery_id, item.id)
+        self.assertEqual(original.status, NodeTaskStatus.SUCCEEDED)
 
     def test_non_recorded_receipt_is_ignored(self) -> None:
         reconciler = NodeResultReconciler()

@@ -51,6 +51,7 @@ class SecureNodeGatewayMVPTests(unittest.TestCase):
     def test_gateway_ingests_heartbeat_without_call_site_token(self) -> None:
         receipt = self.gateway.receive(self.heartbeat(1))
         self.assertEqual(receipt.status, GatewayMessageStatus.DISPATCHED)
+        self.assertEqual(receipt.session_id, self.session.id)
         self.assertEqual(receipt.verification.status, ChannelDecision.ACCEPT)
         self.assertEqual(receipt.result.status, HeartbeatStatus.ACCEPTED)
         self.assertEqual(self.store.snapshot("node.beta").free_vram_gb, 5.0)
@@ -122,6 +123,7 @@ class SecureNodeGatewayMVPTests(unittest.TestCase):
         )
         receipt = self.gateway.receive(envelope)
         self.assertEqual(receipt.status, GatewayMessageStatus.RECORDED)
+        self.assertEqual(receipt.session_id, self.session.id)
         self.assertEqual(len(self.gateway.action_results), 1)
 
     def test_expired_vault_credential_denies_before_verification(self) -> None:

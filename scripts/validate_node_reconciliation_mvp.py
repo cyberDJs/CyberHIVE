@@ -28,6 +28,7 @@ def main() -> None:
         direction=ChannelDirection.NODE_TO_CONTROLLER,
         reason="ack recorded",
         result={"delivery_id": item.id},
+        session_id=item.session_id,
     )
     record = reconciler.ingest_gateway_receipt(ack)
     if record is None or record.status != NodeTaskStatus.ACKED:
@@ -41,6 +42,7 @@ def main() -> None:
         direction=ChannelDirection.NODE_TO_CONTROLLER,
         reason="action result recorded",
         result={"delivery_id": item.id, "status": "succeeded", "action": "prewarm_model"},
+        session_id=item.session_id,
     )
     record = reconciler.ingest_gateway_receipt(result)
     if record is None or record.status != NodeTaskStatus.SUCCEEDED:
