@@ -130,6 +130,31 @@ class NodeDeliveryMVPTests(unittest.TestCase):
         self.assertEqual(item.status, DeliveryStatus.DISPATCHED)
 
 
+    def test_ack_from_different_authenticated_session_is_rejected(self) -> None:
+        other_session, other_token = self.registry.issue_session("node.beta", ttl_seconds=600)
+        self.gateway.store_session(
+            session_id=other_session.id,
+            node_id="node.beta",
+            token=other_token,
+            expires_at=other_session.expires_at,
+        )
+        item = self.enqueue()
+        self.service.dispatch_ready()
+        forged_ack = self.gateway.channel.build_envelope(
+            node_id="node.beta",
+            session_id=other_session.id,
+            direction=ChannelDirection.NODE_TO_CONTROLLER,
+            purpose=ChannelPurpose.ACK,
+            sequence=1,
+            payload={"delivery_id": item.id},
+            session_token=other_token,
+        )
+
+        with self.assertRaises(NodeDeliveryError):
+            self.service.receive_ack_envelope(forged_ack)
+        self.assertEqual(item.status, DeliveryStatus.DISPATCHED)
+
+
     def test_outbound_ack_receipt_does_not_complete_delivery(self) -> None:
         item = self.enqueue()
         self.service.dispatch_ready()

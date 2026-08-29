@@ -72,3 +72,8 @@ The secure node gateway is useful only if higher layers can tell whether an acti
 - delivery metrics,
 - queue draining on shutdown,
 - operator UI for dead-letter handling.
+
+
+## Session-bound ACK completion
+
+ACK completion is bound to the authenticated gateway receipt identity. `NodeDeliveryService.record_gateway_receipt()` passes both the verified `node_id` and verified `session_id` into the delivery queue, and `ReliableDeliveryQueue.mark_acked()` rejects ACKs whose session does not match the registered delivery session. This prevents one active session of the same node from stopping retries for work dispatched to another session.

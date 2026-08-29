@@ -270,6 +270,50 @@ class NodeResultReconciliationTests(unittest.TestCase):
         self.assertEqual(legitimate.delivery_id, item.id)
         self.assertEqual(original.status, NodeTaskStatus.SUCCEEDED)
 
+    def test_wrong_session_receipt_quarantines_all_payload_aliases(self) -> None:
+        queue = ReliableDeliveryQueue()
+        item = queue.enqueue_action(node_id="node.beta", session_id="sess_b", action="prewarm_model")
+        reconciler = NodeResultReconciler()
+        original = reconciler.register_delivery(item)
+
+        forged = reconciler.ingest_gateway_receipt(
+            _receipt(
+                purpose=ChannelPurpose.ACTION_RESULT,
+                payload={
+                    "delivery_id": item.id,
+                    "action_request_id": "act-poison",
+                    "status": "accepted",
+                    "action": "prewarm_model",
+                },
+                node_id="node.beta",
+                session_id="sess_a",
+                envelope_id="msg_beta_wrong_session_alias",
+            )
+        )
+
+        self.assertIsNotNone(forged)
+        self.assertEqual(forged.status, NodeTaskStatus.ORPHANED)
+        self.assertIn("act-poison", forged.metadata["untrusted_aliases"])
+        self.assertEqual(original.status, NodeTaskStatus.REGISTERED)
+
+        legitimate = reconciler.ingest_gateway_receipt(
+            _receipt(
+                purpose=ChannelPurpose.ACTION_RESULT,
+                payload={
+                    "delivery_id": item.id,
+                    "action_request_id": "act-poison",
+                    "status": "succeeded",
+                    "action": "prewarm_model",
+                },
+                node_id="node.beta",
+                session_id="sess_b",
+                envelope_id="msg_beta_right_session_after_poison",
+            )
+        )
+
+        self.assertEqual(legitimate.delivery_id, item.id)
+        self.assertEqual(original.status, NodeTaskStatus.SUCCEEDED)
+
     def test_action_request_alias_is_preserved_after_first_result(self) -> None:
         queue = ReliableDeliveryQueue()
         item = queue.enqueue_action(node_id="node.beta", session_id="sess_1", action="prewarm_model")

@@ -517,7 +517,7 @@ class NodeDeliveryService:
         if receipt.direction != ChannelDirection.NODE_TO_CONTROLLER:
             return None
         payload = receipt.result if isinstance(receipt.result, Mapping) else {}
-        return self.queue.mark_acked(payload, node_id=receipt.node_id, now=now)
+        return self.queue.mark_acked(payload, node_id=receipt.node_id, session_id=receipt.session_id, now=now)
 
     def receive_ack_envelope(self, envelope: SignedChannelEnvelope, *, now: datetime | None = None) -> DeliveryItem | None:
         if envelope.direction != ChannelDirection.NODE_TO_CONTROLLER or envelope.purpose != ChannelPurpose.ACK:

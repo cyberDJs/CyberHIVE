@@ -100,3 +100,8 @@ The next patch should wire this into execution/control-plane orchestration so de
 When a registered delivery has a `session_id`, reconciliation requires the verified gateway receipt session to match that delivery session. Payload-provided `session_id` is treated only as a consistency claim; it cannot substitute for the authenticated session retained by `GatewayReceipt`. Mismatched or missing verified sessions become orphaned records and do not mutate the owner task.
 
 The alias index also preserves learned `action_request_id` values from result/error payloads so later terminal updates can correlate through the same action request alias.
+
+
+## Alias quarantine on ownership/session mismatch
+
+When any supplied payload alias resolves to an existing task but fails node or verified-session matching, the reconciler treats the whole payload alias set as untrusted for the resulting orphan. Companion aliases such as `action_request_id` are not learned from mismatched receipts. The owner session can still reconcile the original delivery later by presenting a valid alias under the verified session.

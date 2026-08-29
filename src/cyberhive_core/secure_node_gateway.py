@@ -313,11 +313,11 @@ class SecureNodeGateway:
 
         if envelope.direction == ChannelDirection.NODE_TO_CONTROLLER and envelope.purpose == ChannelPurpose.HEARTBEAT:
             decision, result = self.router.ingest_heartbeat(envelope, session_token=credential.token, now=now)
-            return self._from_verification(decision, result=result, success_status=GatewayMessageStatus.DISPATCHED, success_reason="heartbeat ingested")
+            return self._from_verification(decision, envelope=envelope, result=result, success_status=GatewayMessageStatus.DISPATCHED, success_reason="heartbeat ingested")
 
         if envelope.direction == ChannelDirection.CONTROLLER_TO_NODE and envelope.purpose == ChannelPurpose.ACTION:
             decision, result = self.router.dispatch_action(envelope, session_token=credential.token, now=now)
-            return self._from_verification(decision, result=result, success_status=GatewayMessageStatus.DISPATCHED, success_reason="action dispatched")
+            return self._from_verification(decision, envelope=envelope, result=result, success_status=GatewayMessageStatus.DISPATCHED, success_reason="action dispatched")
 
         if envelope.direction == ChannelDirection.NODE_TO_CONTROLLER and envelope.purpose == ChannelPurpose.ACTION_RESULT:
             decision = self.channel.verify(
@@ -329,19 +329,19 @@ class SecureNodeGateway:
             )
             if decision.accepted:
                 self.action_results.append(dict(envelope.payload))
-            return self._from_verification(decision, result=dict(envelope.payload), success_status=GatewayMessageStatus.RECORDED, success_reason="action result recorded")
+            return self._from_verification(decision, envelope=envelope, result=dict(envelope.payload), success_status=GatewayMessageStatus.RECORDED, success_reason="action result recorded")
 
         if envelope.purpose == ChannelPurpose.ACK:
             decision = self.channel.verify(envelope, session_token=credential.token, expected_purpose=ChannelPurpose.ACK, now=now)
             if decision.accepted:
                 self.acks.append(dict(envelope.payload))
-            return self._from_verification(decision, result=dict(envelope.payload), success_status=GatewayMessageStatus.RECORDED, success_reason="ack recorded")
+            return self._from_verification(decision, envelope=envelope, result=dict(envelope.payload), success_status=GatewayMessageStatus.RECORDED, success_reason="ack recorded")
 
         if envelope.purpose == ChannelPurpose.ERROR:
             decision = self.channel.verify(envelope, session_token=credential.token, expected_purpose=ChannelPurpose.ERROR, now=now)
             if decision.accepted:
                 self.errors.append(dict(envelope.payload))
-            return self._from_verification(decision, result=dict(envelope.payload), success_status=GatewayMessageStatus.RECORDED, success_reason="error recorded")
+            return self._from_verification(decision, envelope=envelope, result=dict(envelope.payload), success_status=GatewayMessageStatus.RECORDED, success_reason="error recorded")
 
         verification = ChannelVerification(
             status=ChannelDecision.DENY,
@@ -350,12 +350,13 @@ class SecureNodeGateway:
             reason="unsupported direction/purpose for secure node gateway",
             findings=("unsupported-gateway-message",),
         )
-        return self._from_verification(verification, result=None, success_status=GatewayMessageStatus.ACCEPTED, success_reason="message accepted")
+        return self._from_verification(verification, envelope=envelope, result=None, success_status=GatewayMessageStatus.ACCEPTED, success_reason="message accepted")
 
     def _from_verification(
         self,
         verification: ChannelVerification,
         *,
+        envelope: SignedChannelEnvelope,
         result: Any | None,
         success_status: GatewayMessageStatus,
         success_reason: str,
@@ -377,12 +378,12 @@ class SecureNodeGateway:
                 status=status,
                 envelope_id=verification.envelope_id,
                 node_id=verification.node_id,
-                purpose=self._purpose_from_verification(verification),
-                direction=self._direction_from_verification(verification),
+                purpose=envelope.purpose,
+                direction=envelope.direction,
                 reason=reason,
                 verification=verification,
                 result=result,
-                session_id=self._session_from_verification(verification),
+                session_id=envelope.session_id,
             )
         )
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import unittest
 
@@ -125,6 +126,39 @@ class SecureNodeGatewayMVPTests(unittest.TestCase):
         self.assertEqual(receipt.status, GatewayMessageStatus.RECORDED)
         self.assertEqual(receipt.session_id, self.session.id)
         self.assertEqual(len(self.gateway.action_results), 1)
+
+    def test_receipt_identity_uses_verified_inbound_envelope_when_ids_collide(self) -> None:
+        other_session, other_token = self.registry.issue_session("node.beta", ttl_seconds=300)
+        self.gateway.store_session(
+            session_id=other_session.id,
+            node_id="node.beta",
+            token=other_token,
+            expires_at=other_session.expires_at,
+        )
+        outbound = self.gateway.build_action_envelope(
+            node_id="node.beta",
+            session_id=other_session.id,
+            action="prewarm_model",
+            payload={"model_id": "llama-small"},
+        )
+        inbound = self.gateway.channel.build_envelope(
+            node_id="node.beta",
+            session_id=self.session.id,
+            direction=ChannelDirection.NODE_TO_CONTROLLER,
+            purpose=ChannelPurpose.ACTION_RESULT,
+            sequence=1,
+            payload={"request_id": "act_collision", "status": "succeeded"},
+            session_token=self.token,
+        )
+        inbound = replace(inbound, id=outbound.id, signature=None).sign(self.token)
+
+        receipt = self.gateway.receive(inbound)
+
+        self.assertEqual(receipt.status, GatewayMessageStatus.RECORDED)
+        self.assertEqual(receipt.envelope_id, outbound.id)
+        self.assertEqual(receipt.session_id, self.session.id)
+        self.assertEqual(receipt.direction, ChannelDirection.NODE_TO_CONTROLLER)
+        self.assertEqual(receipt.purpose, ChannelPurpose.ACTION_RESULT)
 
     def test_expired_vault_credential_denies_before_verification(self) -> None:
         gateway = SecureNodeGateway(channel=SecureChannel(registry=self.registry), heartbeat_store=self.store)
