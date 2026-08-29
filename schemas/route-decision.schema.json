@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/route-decision.schema.json",
+  "title": "CyberHIVE Route Decision",
+  "type": "object",
+  "required": ["request_id", "action", "target_node", "score", "reason", "alternatives"],
+  "properties": {
+    "request_id": {"type": "string", "minLength": 1},
+    "action": {"type": "string", "enum": ["route", "queue", "reject", "prewarm"]},
+    "target_node": {"type": ["string", "null"]},
+    "score": {"type": "number", "minimum": 0, "maximum": 1},
+    "reason": {"type": "string"},
+    "queue": {"type": "boolean"},
+    "prewarm": {"type": "array", "items": {"type": "string"}},
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "score", "eligible", "reasons"],
+        "properties": {
+          "node_id": {"type": "string"},
+          "score": {"type": "number", "minimum": 0, "maximum": 1},
+          "eligible": {"type": "boolean"},
+          "reasons": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

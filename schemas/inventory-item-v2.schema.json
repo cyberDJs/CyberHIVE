@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/inventory-item-v2.schema.json",
+  "title": "CyberHIVE Inventory Item v2",
+  "type": "object",
+  "required": ["id", "kind", "name", "enabled", "indexing", "access", "exposure", "sensitivity"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "kind": {"type": "string", "minLength": 1},
+    "name": {"type": "string", "minLength": 1},
+    "enabled": {"type": "boolean"},
+    "indexing": {"enum": ["indexed", "non_indexed"]},
+    "access": {"enum": ["allowed", "gated", "denied"]},
+    "exposure": {"enum": ["private", "lan", "authenticated", "public"]},
+    "sensitivity": {"enum": ["public", "internal", "sensitive", "secret"]},
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {"type": "string"},
+          "permissions": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "owner": {"type": ["string", "null"]},
+    "metadata": {"type": "object"}
+  },
+  "additionalProperties": false
+}

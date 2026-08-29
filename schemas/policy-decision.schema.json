@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/policy-decision.schema.json",
+  "title": "CyberHIVE Policy Decision",
+  "type": "object",
+  "required": ["id", "outcome", "subject", "dry_run", "created_at", "findings"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "outcome": {"enum": ["allow", "warn", "require_approval", "deny"]},
+    "subject": {"type": "string"},
+    "dry_run": {"type": "boolean"},
+    "created_at": {"type": "string"},
+    "required_approvals": {"type": "array", "items": {"type": "string"}},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rule_id", "outcome", "severity", "reason"],
+        "properties": {
+          "rule_id": {"type": "string"},
+          "outcome": {"enum": ["allow", "warn", "require_approval", "deny"]},
+          "severity": {"enum": ["info", "low", "medium", "high", "critical"]},
+          "reason": {"type": "string"},
+          "required_approval": {"type": ["string", "null"]},
+          "metadata": {"type": "object"}
+        }
+      }
+    },
+    "metadata": {"type": "object"}
+  }
+}

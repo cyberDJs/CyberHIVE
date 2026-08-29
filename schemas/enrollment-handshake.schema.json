@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/enrollment-handshake.schema.json",
+  "title": "CyberHIVE Enrollment Handshake Challenge",
+  "type": "object",
+  "required": ["id", "proposed_node_id", "bootstrap_token_id", "allowed_capabilities", "endpoints", "issued_at", "expires_at", "status"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^hs_"},
+    "proposed_node_id": {"type": "string", "minLength": 1},
+    "bootstrap_token_id": {"type": "string", "pattern": "^bt_"},
+    "allowed_capabilities": {"type": "array", "items": {"type": "string"}},
+    "endpoints": {"type": "array", "items": {"type": "string"}},
+    "issued_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "status": {"type": "string", "enum": ["issued", "approved", "denied", "expired"]},
+    "reason": {"type": "string"},
+    "discovery_record_id": {"type": ["string", "null"]},
+    "enrollment_request_id": {"type": ["string", "null"]},
+    "identity_id": {"type": ["string", "null"]}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/node-heartbeat.schema.json",
+  "title": "CyberHIVE Node Heartbeat",
+  "type": "object",
+  "required": ["node_id", "sequence", "observed_at", "metrics"],
+  "properties": {
+    "id": {"type": "string"},
+    "node_id": {"type": "string", "minLength": 1},
+    "sequence": {"type": "integer", "minimum": 0},
+    "session_id": {"type": ["string", "null"]},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "capabilities": {"type": "array", "items": {"type": "string"}},
+    "labels": {"type": "object", "additionalProperties": {"type": "string"}},
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "cpu_cores": {"type": "number", "minimum": 0},
+        "free_cpu_cores": {"type": "number", "minimum": 0},
+        "memory_gb": {"type": "number", "minimum": 0},
+        "free_memory_gb": {"type": "number", "minimum": 0},
+        "gpu_vram_gb": {"type": "number", "minimum": 0},
+        "free_vram_gb": {"type": "number", "minimum": 0},
+        "gpu_utilization": {"type": "number", "minimum": 0},
+        "queue_depth": {"type": "integer", "minimum": 0},
+        "latency_ms": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "data_locality": {"type": "array", "items": {"type": "string"}},
+    "metadata": {"type": "object"}
+  },
+  "additionalProperties": false
+}

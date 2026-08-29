@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/node-agent-action.schema.json",
+  "title": "CyberHIVE Node Agent Action",
+  "type": "object",
+  "required": ["id", "target_node", "action", "dry_run", "payload"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "target_node": {"type": "string", "minLength": 1},
+    "action": {
+      "type": "string",
+      "enum": ["health_check", "prewarm_model", "data_move", "cache_prime", "noop"]
+    },
+    "dry_run": {"type": "boolean"},
+    "payload": {"type": "object"},
+    "approval_tokens": {"type": "array", "items": {"type": "string"}},
+    "requested_by": {"type": "string"},
+    "correlation_id": {"type": ["string", "null"]},
+    "created_at": {"type": "string"}
+  },
+  "additionalProperties": true
+}

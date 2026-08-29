@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/approval-request.schema.json",
+  "title": "CyberHIVE Approval Request",
+  "type": "object",
+  "required": ["id", "policy_decision_id", "subject", "requested_by", "required_tokens", "granted_tokens", "missing_tokens", "created_at", "expires_at", "status"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^appr_[a-z0-9]+$"},
+    "policy_decision_id": {"type": "string"},
+    "subject": {"type": "string"},
+    "requested_by": {"type": "string"},
+    "required_tokens": {"type": "array", "items": {"type": "string"}},
+    "granted_tokens": {"type": "array", "items": {"type": "string"}},
+    "missing_tokens": {"type": "array", "items": {"type": "string"}},
+    "created_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "status": {"enum": ["open", "partially_approved", "approved", "denied", "expired", "cancelled"]},
+    "reason": {"type": "string"},
+    "grants": {"type": "array"},
+    "metadata": {"type": "object"}
+  },
+  "additionalProperties": true
+}

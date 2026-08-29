@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CyberHIVE Action Handler Registry",
+  "type": "object",
+  "required": [
+    "handlers"
+  ],
+  "properties": {
+    "handlers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "action",
+          "dry_run_safe",
+          "live_safe"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "dry_run_safe": {
+            "type": "boolean"
+          },
+          "live_safe": {
+            "type": "boolean"
+          },
+          "required_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/scheduler-hint.schema.json",
+  "title": "CyberHIVE Scheduler Hint",
+  "type": "object",
+  "required": ["action", "target", "reason", "priority"],
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["none", "prewarm", "shift_load", "throttle_background", "scale_up", "scale_down", "hold_capacity"]
+    },
+    "target": {"type": "string", "minLength": 1},
+    "reason": {"type": "string", "minLength": 1},
+    "priority": {"type": "integer", "minimum": 0, "maximum": 100},
+    "forecast": {"type": ["object", "null"]},
+    "metadata": {"type": "object"}
+  }
+}

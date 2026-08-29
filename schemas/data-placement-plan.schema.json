@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/data-placement-plan.schema.json",
+  "title": "CyberHIVE Data Placement Plan",
+  "type": "object",
+  "required": ["object_id", "action", "to_tier", "replicas"],
+  "properties": {
+    "object_id": {"type": "string", "minLength": 1},
+    "action": {"enum": ["keep", "promote", "demote", "replicate", "move", "evict"]},
+    "from_tier": {"type": ["string", "null"]},
+    "to_tier": {"enum": ["l1_ram", "l2_local_nvme", "l3_local_ssd", "l4_hdd_raid", "l5_nas_distributed", "l6_archive_remote"]},
+    "replicas": {"type": "integer", "minimum": 1},
+    "target_devices": {"type": "array", "items": {"type": "string"}},
+    "reason": {"type": "string"}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/node-delivery-item.schema.json",
+  "title": "CyberHIVE Node Delivery Item",
+  "type": "object",
+  "required": ["id", "node_id", "session_id", "action", "status", "attempts", "priority", "policy"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^del_[a-f0-9]{20}$"},
+    "node_id": {"type": "string", "minLength": 1},
+    "session_id": {"type": "string", "minLength": 1},
+    "action": {"type": "string", "minLength": 1},
+    "payload": {"type": "object"},
+    "dry_run": {"type": "boolean"},
+    "approval_tokens": {"type": "array", "items": {"type": "string"}},
+    "requested_by": {"type": "string"},
+    "priority": {"enum": ["low", "normal", "high", "critical"]},
+    "policy": {
+      "type": "object",
+      "required": ["max_attempts", "ack_timeout_seconds", "ttl_seconds"],
+      "properties": {
+        "max_attempts": {"type": "integer", "minimum": 1},
+        "ack_timeout_seconds": {"type": "integer", "minimum": 1},
+        "initial_backoff_seconds": {"type": "integer", "minimum": 0},
+        "backoff_multiplier": {"type": "number", "minimum": 1},
+        "max_backoff_seconds": {"type": "integer", "minimum": 0},
+        "ttl_seconds": {"type": "integer", "minimum": 1}
+      }
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "not_before": {"type": ["string", "null"], "format": "date-time"},
+    "expires_at": {"type": ["string", "null"], "format": "date-time"},
+    "status": {"enum": ["queued", "dispatched", "acked", "retry_wait", "expired", "dead_letter", "cancelled"]},
+    "attempts": {"type": "integer", "minimum": 0},
+    "last_attempt_at": {"type": ["string", "null"], "format": "date-time"},
+    "last_envelope_id": {"type": ["string", "null"]},
+    "acknowledged_at": {"type": ["string", "null"], "format": "date-time"},
+    "last_error": {"type": ["string", "null"]},
+    "metadata": {"type": "object"},
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["status", "reason", "created_at"],
+        "properties": {
+          "status": {"type": "string"},
+          "reason": {"type": "string"},
+          "created_at": {"type": "string", "format": "date-time"},
+          "envelope_id": {"type": ["string", "null"]},
+          "metadata": {"type": "object"}
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

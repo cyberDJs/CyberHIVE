@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CyberHIVE Local Resource Reservation",
+  "type": "object",
+  "required": [
+    "id",
+    "node_id",
+    "action",
+    "status",
+    "request"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "node_id": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "granted",
+        "denied",
+        "released",
+        "dry_run"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "dry_run": {
+      "type": "boolean"
+    },
+    "request": {
+      "type": "object"
+    }
+  }
+}

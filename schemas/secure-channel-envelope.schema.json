@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/secure-channel-envelope.schema.json",
+  "title": "CyberHIVE Secure Channel Envelope",
+  "type": "object",
+  "required": [
+    "id",
+    "node_id",
+    "session_id",
+    "direction",
+    "purpose",
+    "sequence",
+    "issued_at",
+    "payload",
+    "signature"
+  ],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "node_id": {"type": "string", "minLength": 1},
+    "session_id": {"type": "string", "minLength": 1},
+    "direction": {
+      "type": "string",
+      "enum": ["node_to_controller", "controller_to_node"]
+    },
+    "purpose": {
+      "type": "string",
+      "enum": ["heartbeat", "action", "action_result", "ack", "error"]
+    },
+    "sequence": {"type": "integer", "minimum": 1},
+    "issued_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": ["string", "null"], "format": "date-time"},
+    "correlation_id": {"type": ["string", "null"]},
+    "payload": {"type": "object"},
+    "metadata": {"type": "object"},
+    "digest": {"type": "string"},
+    "signature": {"type": ["string", "null"]}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/exposure-request.schema.json",
+  "title": "CyberHIVE Exposure Request",
+  "type": "object",
+  "required": ["resource_id", "subject", "permissions", "ttl_seconds"],
+  "properties": {
+    "resource_id": {"type": "string", "minLength": 1},
+    "subject": {"type": "string", "minLength": 1},
+    "permissions": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "ttl_seconds": {"type": "integer", "minimum": 1, "maximum": 86400},
+    "reason": {"type": "string"},
+    "allow_recording": {"type": "boolean", "default": false},
+    "allow_download": {"type": "boolean", "default": false},
+    "requested_exposure": {"enum": ["authenticated", "public", "lan"]}
+  },
+  "additionalProperties": false
+}
