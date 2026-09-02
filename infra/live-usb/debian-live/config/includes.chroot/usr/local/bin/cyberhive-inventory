@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+mkdir -p /run/cyberhive/evidence
+out="/run/cyberhive/evidence/hardware-inventory.json"
+
+{
+  printf '%s\n' '{'
+  printf '  "schema": "cyberhive.live.hardware_inventory.v0",\n'
+  printf '  "source": "cyberhive-live-usb",\n'
+  printf '  "kernel": '
+  uname -r | jq -R .
+  printf ',\n  "machine": '
+  uname -m | jq -R .
+  printf ',\n  "hostname": '
+  hostname | jq -R .
+  printf ',\n  "notes": "skeleton inventory; richer collectors are future work"\n'
+  printf '%s\n' '}'
+} > "$out"
+
+cat "$out"

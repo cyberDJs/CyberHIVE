@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+# Keep first image behavior conservative. This hook only prepares the local
+# operator message. Runtime directories are declared through tmpfiles.d and
+# entrypoints may recreate them as needed.
+#
+# This hook does not enable SSH, MCP, DevBridge or host-disk writes.
+
+cat >/etc/motd <<'MOTD'
+CyberHIVE Live USB
+
+Local-first peer-to-peer AI fabric bootstrap.
+DevBridge/MCP: disabled until explicit local enable.
+Host disk writes: disabled by default.
+
+Run: cyberhive-role-selector
+Run: cyberhive-live-health
+Run: cyberhive-inventory
+MOTD
