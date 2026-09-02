@@ -72,11 +72,11 @@ class DataMoverMvpTests(unittest.TestCase):
         class FinalChecksumFailingMover(DataMover):
             def __init__(self, target: Path) -> None:
                 super().__init__()
-                self.target = target
+                self.target = target.expanduser().resolve()
 
             def sha256(self, path: Path) -> str:
                 value = super().sha256(path)
-                if Path(path) == self.target:
+                if Path(path).expanduser().resolve() == self.target:
                     return "forced-final-checksum-mismatch"
                 return value
 
