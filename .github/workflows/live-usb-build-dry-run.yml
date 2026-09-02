@@ -4,21 +4,29 @@ on:
   pull_request:
     paths:
       - 'infra/live-usb/**'
+      - 'infra/live-usb/build-plan.md'
       - 'docs/work-blocks/WB-HIVE-BOOT-0002-build-dry-run.md'
       - 'docs/runbooks/live-usb-build-dry-run.md'
       - 'docs/security/live-usb-build-dry-run-safety.md'
+      - 'docs/adr/ADR-0006-live-usb-build-dry-run-boundary.md'
+      - 'docs/notes/**'
       - 'scripts/validate-live-usb-build-dry-run.sh'
       - '.github/workflows/live-usb-build-dry-run.yml'
+      - '.gitignore'
   push:
     branches:
       - main
     paths:
       - 'infra/live-usb/**'
+      - 'infra/live-usb/build-plan.md'
       - 'docs/work-blocks/WB-HIVE-BOOT-0002-build-dry-run.md'
       - 'docs/runbooks/live-usb-build-dry-run.md'
       - 'docs/security/live-usb-build-dry-run-safety.md'
+      - 'docs/adr/ADR-0006-live-usb-build-dry-run-boundary.md'
+      - 'docs/notes/**'
       - 'scripts/validate-live-usb-build-dry-run.sh'
       - '.github/workflows/live-usb-build-dry-run.yml'
+      - '.gitignore'
 
 permissions:
   contents: read
