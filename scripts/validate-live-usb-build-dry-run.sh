@@ -4,6 +4,7 @@ set -eu
 required_paths='docs/work-blocks/WB-HIVE-BOOT-0002-build-dry-run.md
 docs/runbooks/live-usb-build-dry-run.md
 docs/security/live-usb-build-dry-run-safety.md
+docs/adr/ADR-0006-live-usb-build-dry-run-boundary.md
 infra/live-usb/debian-live/BUILD.md
 infra/live-usb/debian-live/build-dry-run.sh
 infra/live-usb/debian-live/expected-manifest.md
