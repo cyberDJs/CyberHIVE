@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       builder_label:
-        description: 'Non-secret builder identity label for evidence'
+        description: 'Non-secret label, 1-80 chars: A-Z a-z 0-9 . _ : @ -'
         required: true
         type: string
       run_build:
