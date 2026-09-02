@@ -4,3 +4,5 @@ __pycache__/
 .env
 .venv/
 .cyberhive-live-build-dry-run/
+.cyberhive-live-real-build/
+infra/live-usb/debian-live/live-image-.*.iso
