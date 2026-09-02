@@ -1,11 +1,11 @@
 #!/bin/sh
 set -eu
 
-# Keep first image behavior conservative. This hook only prepares runtime
-# directories and does not enable SSH, MCP, DevBridge or host-disk writes.
-
-mkdir -p /run/cyberhive/evidence /run/cyberhive/cache /run/cyberhive/state
-chmod 0755 /run/cyberhive /run/cyberhive/evidence /run/cyberhive/cache /run/cyberhive/state
+# Keep first image behavior conservative. This hook only prepares the local
+# operator message. Runtime directories are declared through tmpfiles.d and
+# entrypoints may recreate them as needed.
+#
+# This hook does not enable SSH, MCP, DevBridge or host-disk writes.
 
 cat >/etc/motd <<'MOTD'
 CyberHIVE Live USB
