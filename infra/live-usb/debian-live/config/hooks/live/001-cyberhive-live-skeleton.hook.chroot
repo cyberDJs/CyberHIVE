@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+# Keep first image behavior conservative. This hook only prepares runtime
+# directories and does not enable SSH, MCP, DevBridge or host-disk writes.
+
+mkdir -p /run/cyberhive/evidence /run/cyberhive/cache /run/cyberhive/state
+chmod 0755 /run/cyberhive /run/cyberhive/evidence /run/cyberhive/cache /run/cyberhive/state
+
+cat >/etc/motd <<'MOTD'
+CyberHIVE Live USB
+
+Local-first peer-to-peer AI fabric bootstrap.
+DevBridge/MCP: disabled until explicit local enable.
+Host disk writes: disabled by default.
+
+Run: cyberhive-role-selector
+Run: cyberhive-live-health
+Run: cyberhive-inventory
+MOTD
