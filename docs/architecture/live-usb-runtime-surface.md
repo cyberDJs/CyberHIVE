@@ -47,12 +47,24 @@ Minimum dashboard cards:
 
 A machine-readable health surface must exist before any large UI is treated as complete.
 
-Candidate:
+First image command:
+
+```text
+cyberhive-live-health
+```
+
+Future compatibility targets:
 
 ```text
 GET /health
 cyberhive health
 ```
+
+Naming rule:
+
+- `cyberhive-live-health` is the low-level live-image health command.
+- `cyberhive health` is the future product CLI alias.
+- `GET /health` is the future local API surface.
 
 ### Hardware inventory
 
