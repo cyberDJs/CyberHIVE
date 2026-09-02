@@ -1,0 +1,58 @@
+name: Live USB real image build manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      approval_token:
+        description: 'Must equal BUILD_IMAGE_ONLY_NO_USB'
+        required: true
+        type: string
+      builder_label:
+        description: 'Non-secret builder identity label for evidence'
+        required: true
+        type: string
+      run_build:
+        description: 'Set to true to run the image build wrapper'
+        required: true
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+permissions:
+  contents: read
+
+env:
+  CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL: ${{ github.event.inputs.approval_token }}
+  CYBERHIVE_REAL_IMAGE_BUILDER_LABEL: ${{ github.event.inputs.builder_label }}
+
+jobs:
+  real-image-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate gate before build
+        shell: sh
+        run: sh scripts/validate-live-usb-real-image-build-gate.sh
+      - name: Stop when run_build is false
+        if: ${{ github.event.inputs.run_build != 'true' }}
+        shell: sh
+        run: |
+          echo 'Manual workflow preflight only. Real image build wrapper was not run.'
+          echo 'ISO build: NOT EXECUTED'
+          echo 'USB write: NOT AUTHORIZED'
+          echo 'runtime verification: NOT CLAIMED'
+      - name: Run real image build wrapper
+        if: ${{ github.event.inputs.run_build == 'true' }}
+        shell: sh
+        run: sh infra/live-usb/debian-live/build-real-image.sh
+      - name: Upload build evidence
+        if: ${{ always() && github.event.inputs.run_build == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyberhive-live-real-build-evidence
+          path: .cyberhive-live-real-build/
+          if-no-files-found: warn
