@@ -26,11 +26,43 @@ Required environment value:
 CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL=BUILD_IMAGE_ONLY_NO_USB
 ```
 
-The wrapper must refuse execution without that exact value.
+The wrapper must refuse execution without that exact value before creating build output.
+
+## Builder label
+
+Required evidence label input:
+
+```text
+CYBERHIVE_REAL_IMAGE_BUILDER_LABEL=<safe-label>
+```
+
+Allowed characters:
+
+```text
+A-Z a-z 0-9 . _ : @ -
+```
+
+The wrapper must refuse unsafe labels before creating build output.
+
+## Output directory
+
+The canonical output directory is fixed:
+
+```text
+.cyberhive-live-real-build/
+```
+
+No output-directory override is supported by this gate.
 
 ## Tooling expectation
 
-The first implementation expects a builder with `lb` available.
+The first implementation expects a builder with `lb` available and one of these SHA-256 tools available:
+
+```text
+sha256sum
+shasum
+openssl
+```
 
 The wrapper does not install system packages. Builder provisioning is a separate operator concern.
 
@@ -67,6 +99,8 @@ The final manifest hash must be external:
 ```text
 <image-name>.manifest.json.sha256
 ```
+
+Success evidence must fail closed when required SHA-256 evidence cannot be produced.
 
 ## Evidence boundary
 
