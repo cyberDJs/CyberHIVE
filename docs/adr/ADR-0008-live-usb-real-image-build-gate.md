@@ -18,12 +18,21 @@ Introduce a build-only gate for the Debian Live candidate.
 
 The gate requires an explicit environment approval token and produces image/build evidence only. It does not authorize media writes, hardware boot tests, runtime verification, deployment, DevBridge/MCP exposure or ADR acceptance.
 
+The gate uses a fixed canonical output directory:
+
+```text
+.cyberhive-live-real-build/
+```
+
+No output-directory override is part of this gate.
+
 ## Consequences
 
 Positive:
 
 - The project gets a concrete path from repository skeleton to first image artifact.
 - Image artifact evidence becomes manifest-driven and hashable.
+- Artifact location and manifest evidence stay aligned through one canonical output directory.
 - USB write and boot smoke remain independent gates.
 - Failed builds can still produce useful failure manifests and logs.
 
@@ -50,12 +59,20 @@ Explicitly out of scope:
 - DevBridge/MCP exposure,
 - deployment.
 
+## Evidence boundary
+
+The build gate must fail closed when SHA-256 evidence cannot be produced.
+
+The build gate must reject unsafe builder labels before creating output. Builder labels are evidence metadata, not secrets.
+
 ## Verification
 
 Before acceptance, the project needs:
 
 - PR review of the build gate files,
 - CI validation of the gate boundaries,
+- no-token refusal evidence from the validator,
+- unsafe-label refusal evidence from the validator,
 - one explicit image-only build attempt receipt,
 - manifest and sidecar hash evidence,
 - confirmation that no USB/boot/runtime/deploy claims were made by the build gate.
