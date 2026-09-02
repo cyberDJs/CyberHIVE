@@ -1,5 +1,8 @@
 # CyberHIVE Live USB package seed.
 # Keep this minimal until the first build is verified.
+#
+# v0.1 intentionally avoids enabling local discovery daemons. Discovery tools
+# may be introduced later only with explicit disabled-by-default policy.
 
 systemd
 systemd-sysv
@@ -17,5 +20,4 @@ inxi
 iproute2
 iputils-ping
 dnsutils
-avahi-daemon
 ca-certificates
