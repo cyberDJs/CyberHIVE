@@ -3,6 +3,7 @@ set -eu
 
 required_paths='docs/work-blocks/WB-HIVE-BOOT-0002-build-dry-run.md
 docs/runbooks/live-usb-build-dry-run.md
+docs/security/live-usb-build-dry-run-safety.md
 infra/live-usb/debian-live/BUILD.md
 infra/live-usb/debian-live/build-dry-run.sh
 infra/live-usb/debian-live/expected-manifest.md
@@ -53,9 +54,9 @@ if grep -n -E '(^|[[:space:];|&])lb[[:space:]]+build([[:space:];|&]|$)' \
   exit 1
 fi
 
-grep -R -n '"build_executed": false' infra/live-usb/debian-live/expected-manifest.md infra/live-usb/debian-live/build-dry-run.sh >/dev/null
-grep -R -n '"iso_created": false' infra/live-usb/debian-live/expected-manifest.md infra/live-usb/debian-live/build-dry-run.sh >/dev/null
-grep -R -n '"usb_written": false' infra/live-usb/debian-live/expected-manifest.md infra/live-usb/debian-live/build-dry-run.sh >/dev/null
-grep -R -n '"runtime_verified": false' infra/live-usb/debian-live/expected-manifest.md infra/live-usb/debian-live/build-dry-run.sh >/dev/null
+grep -R -n '"build_executed": false' infra/live-usb/debian-live/expected-manifest.md infra/live-usb/debian-live/build-dry-run.sh docs/security/live-usb-build-dry-run-safety.md >/dev/null
+grep -R -n '"iso_created": false' infra/live-usb/debian-live/expected-manifest.md infra/live-usb/debian-live/build-dry-run.sh docs/security/live-usb-build-dry-run-safety.md >/dev/null
+grep -R -n '"usb_written": false' infra/live-usb/debian-live/expected-manifest.md infra/live-usb/debian-live/build-dry-run.sh docs/security/live-usb-build-dry-run-safety.md >/dev/null
+grep -R -n '"runtime_verified": false' infra/live-usb/debian-live/expected-manifest.md infra/live-usb/debian-live/build-dry-run.sh docs/security/live-usb-build-dry-run-safety.md >/dev/null
 
 echo 'CyberHIVE live USB build dry-run validation passed'
