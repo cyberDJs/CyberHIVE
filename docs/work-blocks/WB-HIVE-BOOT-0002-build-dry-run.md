@@ -119,4 +119,8 @@ Runtime rollback is not applicable because this work block must not create runti
 
 ## ADR required
 
-No. This block implements the already selected conservative build-preparation path. A future ADR is required if the project commits to a final base image strategy, persistent overlay policy, Secure Boot policy, or DevBridge/MCP runtime boundary.
+Candidate only, not accepted. This block introduces proposed `ADR-0006 — Live USB Build Dry-Run Boundary` as a decision candidate for the dry-run boundary.
+
+The ADR file existing in the repository is not acceptance. Acceptance requires explicit project decision authority.
+
+A future accepted ADR is required if the project commits to a final base image strategy, persistent overlay policy, Secure Boot policy, or DevBridge/MCP runtime boundary.
