@@ -1,14 +1,18 @@
 #!/bin/sh
 set -eu
 
-required_paths='docs/work-blocks/WB-HIVE-BOOT-0002-build-dry-run.md
+required_paths='.gitignore
+.github/workflows/live-usb-build-dry-run.yml
+docs/work-blocks/WB-HIVE-BOOT-0002-build-dry-run.md
 docs/runbooks/live-usb-build-dry-run.md
 docs/security/live-usb-build-dry-run-safety.md
 docs/adr/ADR-0006-live-usb-build-dry-run-boundary.md
+docs/notes/README.md
+docs/notes/WB-HIVE-BOOT-0002-source-map.md
+infra/live-usb/build-plan.md
 infra/live-usb/debian-live/BUILD.md
 infra/live-usb/debian-live/build-dry-run.sh
 infra/live-usb/debian-live/expected-manifest.md
-.github/workflows/live-usb-build-dry-run.yml
 scripts/validate-live-usb-build-dry-run.sh'
 
 printf '%s\n' "$required_paths" | while IFS= read -r path; do
