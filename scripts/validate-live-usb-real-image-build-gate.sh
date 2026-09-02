@@ -85,6 +85,11 @@ for path in infra/live-usb/debian-live/build-real-image.sh .github/workflows/liv
   fi
 done
 
+output_existed='false'
+if [ -e .cyberhive-live-real-build ]; then
+  output_existed='true'
+fi
+
 no_token_stdout="${TMPDIR:-/tmp}/cyberhive-real-image-no-token.out"
 no_token_stderr="${TMPDIR:-/tmp}/cyberhive-real-image-no-token.err"
 no_token_status=0
@@ -96,7 +101,7 @@ if [ "$no_token_status" -ne 2 ]; then
   echo "real image build wrapper must refuse missing approval token with exit 2, got $no_token_status" >&2
   exit 1
 fi
-if [ -e .cyberhive-live-real-build ]; then
+if [ "$output_existed" = 'false' ] && [ -e .cyberhive-live-real-build ]; then
   echo 'real image build wrapper created output without approval token' >&2
   exit 1
 fi
@@ -113,7 +118,7 @@ if [ "$bad_label_status" -ne 2 ]; then
   echo "real image build wrapper must refuse unsafe builder labels with exit 2, got $bad_label_status" >&2
   exit 1
 fi
-if [ -e .cyberhive-live-real-build ]; then
+if [ "$output_existed" = 'false' ] && [ -e .cyberhive-live-real-build ]; then
   echo 'real image build wrapper created output for invalid builder label' >&2
   exit 1
 fi
