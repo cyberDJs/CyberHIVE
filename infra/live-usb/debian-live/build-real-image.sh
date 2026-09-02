@@ -7,24 +7,56 @@ if [ "$approval" != "BUILD_IMAGE_ONLY_NO_USB" ]; then
   exit 2
 fi
 
+hash_tool=''
+if command -v sha256sum >/dev/null 2>&1; then
+  hash_tool='sha256sum'
+elif command -v shasum >/dev/null 2>&1; then
+  hash_tool='shasum'
+elif command -v openssl >/dev/null 2>&1; then
+  hash_tool='openssl'
+else
+  echo 'refusing real image build: no SHA-256 tool available' >&2
+  exit 5
+fi
+
+raw_builder_label="${CYBERHIVE_REAL_IMAGE_BUILDER_LABEL:-operator-or-runner-label}"
+if [ -z "$raw_builder_label" ] || [ "${#raw_builder_label}" -gt 80 ]; then
+  echo 'invalid builder label: use 1-80 characters from A-Z a-z 0-9 . _ : @ -' >&2
+  exit 2
+fi
+case "$raw_builder_label" in
+  *[!A-Za-z0-9._:@-]*)
+    echo 'invalid builder label: use 1-80 characters from A-Z a-z 0-9 . _ : @ -' >&2
+    exit 2
+    ;;
+esac
+
 sha256_file() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{print $1}'
-  elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "$1" | awk '{print $1}'
-  else
-    printf '%s' 'UNKNOWN'
-  fi
+  case "$hash_tool" in
+    sha256sum)
+      sha256sum "$1" | awk '{print $1}'
+      ;;
+    shasum)
+      shasum -a 256 "$1" | awk '{print $1}'
+      ;;
+    openssl)
+      openssl dgst -sha256 -r "$1" | awk '{print $1}'
+      ;;
+    *)
+      echo 'internal error: SHA-256 tool not configured' >&2
+      exit 5
+      ;;
+  esac
 }
 
 json_string() {
-  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+  printf '%s' "$1" | tr -d '\r\n' | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
 script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
 repo_root=$(CDPATH= cd "$script_dir/../../.." && pwd)
 live_dir="$repo_root/infra/live-usb/debian-live"
-out_dir="${CYBERHIVE_LIVE_REAL_BUILD_DIR:-$repo_root/.cyberhive-live-real-build}"
+out_dir="$repo_root/.cyberhive-live-real-build"
 source_commit='UNKNOWN'
 if command -v git >/dev/null 2>&1 && git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   source_commit=$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf '%s' 'UNKNOWN')
@@ -48,7 +80,7 @@ package_manifest_path=''
 mkdir -p "$out_dir" "$build_dir"
 : > "$build_log_path"
 
-builder_label=$(json_string "${CYBERHIVE_REAL_IMAGE_BUILDER_LABEL:-operator-or-runner-label}")
+builder_label=$(json_string "$raw_builder_label")
 builder_os=$(json_string "$(uname -a 2>/dev/null || printf '%s' UNKNOWN)")
 build_tool_version='UNKNOWN'
 if command -v lb >/dev/null 2>&1; then
