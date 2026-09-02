@@ -1,0 +1,44 @@
+name: Live USB real image build gate
+
+on:
+  pull_request:
+    paths:
+      - 'infra/live-usb/**'
+      - 'docs/work-blocks/WB-HIVE-BOOT-0004-real-image-build-gate.md'
+      - 'docs/runbooks/live-usb-real-image-build-gate.md'
+      - 'docs/security/live-usb-real-image-build-safety.md'
+      - 'docs/adr/ADR-0008-live-usb-real-image-build-gate.md'
+      - 'docs/notes/WB-HIVE-BOOT-0004-source-map.md'
+      - 'scripts/validate-live-usb-real-image-build-gate.sh'
+      - '.github/workflows/live-usb-real-image-build-gate.yml'
+      - '.github/workflows/live-usb-real-image-build-manual.yml'
+      - '.gitignore'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/live-usb/**'
+      - 'docs/work-blocks/WB-HIVE-BOOT-0004-real-image-build-gate.md'
+      - 'docs/runbooks/live-usb-real-image-build-gate.md'
+      - 'docs/security/live-usb-real-image-build-safety.md'
+      - 'docs/adr/ADR-0008-live-usb-real-image-build-gate.md'
+      - 'docs/notes/WB-HIVE-BOOT-0004-source-map.md'
+      - 'scripts/validate-live-usb-real-image-build-gate.sh'
+      - '.github/workflows/live-usb-real-image-build-gate.yml'
+      - '.github/workflows/live-usb-real-image-build-manual.yml'
+      - '.gitignore'
+
+permissions:
+  contents: read
+
+jobs:
+  real-image-build-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate real image build gate scope
+        shell: sh
+        run: sh scripts/validate-live-usb-real-image-build-gate.sh
