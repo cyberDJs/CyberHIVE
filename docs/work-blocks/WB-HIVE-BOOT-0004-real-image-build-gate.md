@@ -56,6 +56,8 @@ The build gate may create an ISO/image candidate and local evidence files. It mu
 
 The directory remains ignored by Git.
 
+No output-directory override is supported by this gate. Artifact location and manifest evidence must stay aligned.
+
 ## Evidence bundle
 
 A successful build gate run must produce or preserve:
@@ -69,7 +71,7 @@ A successful build gate run must produce or preserve:
 - build log SHA-256,
 - package/rootfs manifest when available,
 - source commit,
-- builder label and OS summary,
+- safe builder label and OS summary,
 - explicit negative claims for USB write, boot, runtime verification, deployment and ADR acceptance.
 
 ## Required negative claims
@@ -86,8 +88,12 @@ ADR accepted: NO
 
 - Gate files exist and are validated in CI.
 - Real build wrapper requires the exact build-only token.
-- Real build wrapper refuses to run without the token.
+- Real build wrapper refuses to run without the token before creating output.
+- Real build wrapper refuses unsafe builder labels before creating output.
 - Build output remains inside `.cyberhive-live-real-build/`.
+- No output-directory override exists for this gate.
+- Build evidence fails closed when no SHA-256 tool exists.
+- Success evidence cannot use `UNKNOWN` for image SHA-256, build-log SHA-256 or manifest sidecar hash.
 - Build script contains no USB/media write command.
 - Manifest contract from `WB-HIVE-BOOT-0003` is reused.
 - CI validation does not run a real image build.
