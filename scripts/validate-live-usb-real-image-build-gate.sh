@@ -55,11 +55,24 @@ grep -n '^infra/live-usb/debian-live/live-image-.*\.iso$' .gitignore >/dev/null
 grep -n 'CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n 'BUILD_IMAGE_ONLY_NO_USB' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n 'refusing real image build' infra/live-usb/debian-live/build-real-image.sh >/dev/null
+grep -n 'refusing real image build: no SHA-256 tool available' infra/live-usb/debian-live/build-real-image.sh >/dev/null
+grep -n 'invalid builder label' infra/live-usb/debian-live/build-real-image.sh >/dev/null
+grep -n 'out_dir="$repo_root/.cyberhive-live-real-build"' infra/live-usb/debian-live/build-real-image.sh >/dev/null
+grep -n '"output_directory": ".cyberhive-live-real-build/"' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n '"usb_written": false' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n '"hardware_booted": false' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n '"runtime_verified": false' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n '"deployment_performed": false' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n '"adr_accepted": false' infra/live-usb/debian-live/build-real-image.sh >/dev/null
+
+if grep -R -n 'CYBERHIVE_LIVE_REAL_BUILD_DIR' \
+  infra/live-usb/debian-live/build-real-image.sh \
+  docs/runbooks/live-usb-real-image-build-gate.md \
+  docs/security/live-usb-real-image-build-safety.md \
+  docs/work-blocks/WB-HIVE-BOOT-0004-real-image-build-gate.md; then
+  echo 'real image build output directory override must not be present in gate scope' >&2
+  exit 1
+fi
 
 for path in infra/live-usb/debian-live/build-real-image.sh .github/workflows/live-usb-real-image-build-manual.yml; do
   if grep -n -E '(^|[[:space:]])(dd|mkfs|wipefs|parted)([[:space:]]|$)' "$path"; then
@@ -71,6 +84,39 @@ for path in infra/live-usb/debian-live/build-real-image.sh .github/workflows/liv
     exit 1
   fi
 done
+
+no_token_stdout="${TMPDIR:-/tmp}/cyberhive-real-image-no-token.out"
+no_token_stderr="${TMPDIR:-/tmp}/cyberhive-real-image-no-token.err"
+no_token_status=0
+CYBERHIVE_REAL_IMAGE_BUILDER_LABEL='validator-no-token' \
+  sh infra/live-usb/debian-live/build-real-image.sh \
+  >"$no_token_stdout" 2>"$no_token_stderr" || no_token_status=$?
+if [ "$no_token_status" -ne 2 ]; then
+  cat "$no_token_stderr" >&2 || true
+  echo "real image build wrapper must refuse missing approval token with exit 2, got $no_token_status" >&2
+  exit 1
+fi
+if [ -e .cyberhive-live-real-build ]; then
+  echo 'real image build wrapper created output without approval token' >&2
+  exit 1
+fi
+
+bad_label_stdout="${TMPDIR:-/tmp}/cyberhive-real-image-bad-label.out"
+bad_label_stderr="${TMPDIR:-/tmp}/cyberhive-real-image-bad-label.err"
+bad_label_status=0
+CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL=BUILD_IMAGE_ONLY_NO_USB \
+CYBERHIVE_REAL_IMAGE_BUILDER_LABEL='bad label with spaces' \
+  sh infra/live-usb/debian-live/build-real-image.sh \
+  >"$bad_label_stdout" 2>"$bad_label_stderr" || bad_label_status=$?
+if [ "$bad_label_status" -ne 2 ]; then
+  cat "$bad_label_stderr" >&2 || true
+  echo "real image build wrapper must refuse unsafe builder labels with exit 2, got $bad_label_status" >&2
+  exit 1
+fi
+if [ -e .cyberhive-live-real-build ]; then
+  echo 'real image build wrapper created output for invalid builder label' >&2
+  exit 1
+fi
 
 grep -n '^on:$' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
 grep -n '^  workflow_dispatch:$' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
