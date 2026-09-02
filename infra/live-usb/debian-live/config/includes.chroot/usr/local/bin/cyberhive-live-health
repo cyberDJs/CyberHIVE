@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+printf '%s\n' '{'
+printf '  "service": "cyberhive-live",\n'
+printf '  "status": "ok",\n'
+printf '  "mode": "skeleton",\n'
+printf '  "host_disk_write_default": "disabled",\n'
+printf '  "devbridge_default": "disabled",\n'
+printf '  "mcp_default": "disabled"\n'
+printf '%s\n' '}'
