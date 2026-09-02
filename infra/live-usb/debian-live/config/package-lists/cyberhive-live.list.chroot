@@ -1,0 +1,21 @@
+# CyberHIVE Live USB package seed.
+# Keep this minimal until the first build is verified.
+
+systemd
+systemd-sysv
+network-manager
+openssh-client
+curl
+jq
+python3
+python3-venv
+git
+pciutils
+usbutils
+lshw
+inxi
+iproute2
+iputils-ping
+dnsutils
+avahi-daemon
+ca-certificates
