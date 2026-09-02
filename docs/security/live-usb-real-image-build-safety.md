@@ -4,7 +4,13 @@
 
 `WB-HIVE-BOOT-0004` introduces a real image build gate, not a media write or runtime verification gate.
 
-The only permitted artifact mutation is creation of build evidence inside the configured build output directory.
+The only permitted artifact mutation is creation of build evidence inside the canonical build output directory.
+
+```text
+.cyberhive-live-real-build/
+```
+
+No output-directory override is permitted by this gate.
 
 ## Permitted by this gate
 
@@ -42,13 +48,39 @@ CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL=BUILD_IMAGE_ONLY_NO_USB
 
 The token is intentionally not a secret. It is a friction and audit marker proving that the operator requested image build only.
 
+## Builder label safety
+
+`CYBERHIVE_REAL_IMAGE_BUILDER_LABEL` must be non-secret evidence metadata.
+
+The wrapper must accept only this safe character set:
+
+```text
+A-Z a-z 0-9 . _ : @ -
+```
+
+The wrapper must reject empty, overlong or unsafe labels before creating build output.
+
+## Hash evidence safety
+
+A real image build gate must fail closed when no SHA-256 tool is available.
+
+Accepted SHA-256 tools:
+
+```text
+sha256sum
+shasum
+openssl
+```
+
+A successful build manifest must not use `UNKNOWN` for image SHA-256, build-log SHA-256 or manifest sidecar evidence.
+
 ## Builder isolation
 
 Preferred builder:
 
 - disposable VM,
 - ephemeral CI runner,
-- container or microVM with no host disk mounts except the repository workspace and output directory.
+- container or microVM with no host disk mounts except the repository workspace and canonical output directory.
 
 Local builders are acceptable only when the operator understands that Live image builds may create many temporary files inside the workspace/output directory.
 
