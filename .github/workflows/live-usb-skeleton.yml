@@ -1,0 +1,37 @@
+name: Live USB skeleton
+
+on:
+  pull_request:
+    paths:
+      - 'infra/live-usb/**'
+      - 'docs/runbooks/live-usb-bootstrap.md'
+      - 'docs/architecture/live-usb-runtime-surface.md'
+      - 'docs/security/live-usb-threat-model.md'
+      - 'docs/ux/cyberhive-runtime-branding.md'
+      - 'assets/brand/runtime/**'
+      - 'scripts/validate-live-usb-skeleton.sh'
+      - '.github/workflows/live-usb-skeleton.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/live-usb/**'
+      - 'docs/runbooks/live-usb-bootstrap.md'
+      - 'docs/architecture/live-usb-runtime-surface.md'
+      - 'docs/security/live-usb-threat-model.md'
+      - 'docs/ux/cyberhive-runtime-branding.md'
+      - 'assets/brand/runtime/**'
+      - 'scripts/validate-live-usb-skeleton.sh'
+      - '.github/workflows/live-usb-skeleton.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-live-usb-skeleton:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate CyberHIVE live USB skeleton
+        run: sh scripts/validate-live-usb-skeleton.sh
