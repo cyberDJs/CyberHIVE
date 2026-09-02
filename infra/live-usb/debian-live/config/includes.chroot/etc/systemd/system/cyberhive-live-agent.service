@@ -1,0 +1,13 @@
+[Unit]
+Description=CyberHIVE Live USB Agent Skeleton
+Documentation=file:/usr/local/bin/cyberhive-live-health
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/cyberhive-live-health
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
