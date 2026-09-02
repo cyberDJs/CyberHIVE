@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+cat <<'MENU'
+CyberHIVE Live USB
+==================
+
+Select boot role:
+
+1. Controller + Worker
+2. Worker Only
+3. DevBridge Mode (disabled until explicit local enable)
+4. Offline Diagnostics
+5. Rescue / Hardware Inventory
+
+This skeleton does not start runtime services yet.
+MENU
