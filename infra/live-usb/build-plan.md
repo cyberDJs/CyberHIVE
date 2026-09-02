@@ -64,19 +64,34 @@ This stage may determine whether the live-build command is visible on the runner
 
 Status: implemented by `WB-HIVE-BOOT-0002`.
 
-### Stage 2 — local dry build
+### Stage 2 — real build plan
 
-A developer can build an ISO/image locally from tracked configuration.
+The real build plan defines the next gate without building an image.
 
-This remains future work. It requires a separate work block, explicit build evidence and a hashable output artifact.
+Status: implemented as plan by `WB-HIVE-BOOT-0003`.
 
-### Stage 3 — CI dry build
+Boundary markers:
+
+```text
+ISO build: NOT EXECUTED
+USB write: NOT AUTHORIZED
+runtime verification: NOT CLAIMED
+ADR accepted: NO
+```
+
+### Stage 3 — authorized local image build
+
+A developer can build an ISO/image locally from tracked configuration only after a separate authorization bound to source commit, build candidate path and output directory.
+
+This remains future work. It requires explicit build evidence and a hashable output artifact.
+
+### Stage 4 — CI image build candidate
 
 CI validates that the tracked configuration can assemble an image or at least a deterministic root filesystem manifest.
 
-This remains future work and must remain separate from the Stage 1 dry-run wrapper.
+This remains future work and must remain separate from the Stage 1 dry-run wrapper and Stage 2 plan.
 
-### Stage 4 — USB boot smoke
+### Stage 5 — USB boot smoke
 
 Manual evidence proves that the image boots on at least one compatible machine and does not write to internal disks by default.
 
@@ -90,9 +105,10 @@ Proposed pattern:
 cyberhive-live-usb-v<version>-<arch>-<date>.iso
 cyberhive-live-usb-v<version>-<arch>-<date>.manifest.json
 cyberhive-live-usb-v<version>-<arch>-<date>.sha256
+cyberhive-live-usb-v<version>-<arch>-<date>.build-log.txt
 ```
 
-Stage 1 dry-run does not create these artifacts. It only creates a dry-run manifest.
+Stage 1 dry-run does not create these artifacts. Stage 2 planning does not create these artifacts.
 
 ## Dry-run manifest
 
@@ -113,13 +129,41 @@ Required negative claims:
 }
 ```
 
+## Real build manifest
+
+Stage 3 real build manifest path pattern:
+
+```text
+.cyberhive-live-real-build/<image-name>.manifest.json
+```
+
+Required negative claims even after a successful image build:
+
+```json
+{
+  "usb_written": false,
+  "hardware_booted": false,
+  "runtime_verified": false,
+  "deployment_performed": false,
+  "adr_accepted": false
+}
+```
+
 ## Acceptance evidence
 
 Minimum evidence bundle for a future real image build:
 
 - build command and environment
+- source commit
 - image hash
-- package/rootfs manifest
+- manifest hash
+- build log hash
+- package/rootfs manifest when available
+- known limitations
+
+Minimum evidence for a future boot smoke test:
+
+- image hash from the real build manifest
 - boot target hardware summary
 - boot mode: UEFI/BIOS
 - network state
