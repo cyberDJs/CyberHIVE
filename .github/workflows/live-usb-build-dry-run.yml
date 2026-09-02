@@ -1,0 +1,50 @@
+name: Live USB build dry-run
+
+on:
+  pull_request:
+    paths:
+      - 'infra/live-usb/**'
+      - 'infra/live-usb/build-plan.md'
+      - 'docs/work-blocks/WB-HIVE-BOOT-0002-build-dry-run.md'
+      - 'docs/runbooks/live-usb-build-dry-run.md'
+      - 'docs/security/live-usb-build-dry-run-safety.md'
+      - 'docs/adr/ADR-0006-live-usb-build-dry-run-boundary.md'
+      - 'docs/notes/**'
+      - 'scripts/validate-live-usb-build-dry-run.sh'
+      - '.github/workflows/live-usb-build-dry-run.yml'
+      - '.gitignore'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/live-usb/**'
+      - 'infra/live-usb/build-plan.md'
+      - 'docs/work-blocks/WB-HIVE-BOOT-0002-build-dry-run.md'
+      - 'docs/runbooks/live-usb-build-dry-run.md'
+      - 'docs/security/live-usb-build-dry-run-safety.md'
+      - 'docs/adr/ADR-0006-live-usb-build-dry-run-boundary.md'
+      - 'docs/notes/**'
+      - 'scripts/validate-live-usb-build-dry-run.sh'
+      - '.github/workflows/live-usb-build-dry-run.yml'
+      - '.gitignore'
+
+permissions:
+  contents: read
+
+jobs:
+  build-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate dry-run scope
+        shell: sh
+        run: sh scripts/validate-live-usb-build-dry-run.sh
+      - name: Run CyberHIVE Live USB build dry-run
+        shell: sh
+        run: sh infra/live-usb/debian-live/build-dry-run.sh
+      - name: Show dry-run manifest
+        shell: sh
+        run: cat .cyberhive-live-build-dry-run/manifest.json
