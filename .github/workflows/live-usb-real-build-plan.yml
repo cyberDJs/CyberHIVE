@@ -1,0 +1,42 @@
+name: Live USB real build plan
+
+on:
+  pull_request:
+    paths:
+      - 'infra/live-usb/**'
+      - 'docs/work-blocks/WB-HIVE-BOOT-0003-real-build-plan.md'
+      - 'docs/runbooks/live-usb-real-build-plan.md'
+      - 'docs/security/live-usb-real-build-safety.md'
+      - 'docs/adr/ADR-0007-live-usb-real-build-gate.md'
+      - 'docs/notes/WB-HIVE-BOOT-0003-source-map.md'
+      - 'scripts/validate-live-usb-real-build-plan.sh'
+      - '.github/workflows/live-usb-real-build-plan.yml'
+      - '.gitignore'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/live-usb/**'
+      - 'docs/work-blocks/WB-HIVE-BOOT-0003-real-build-plan.md'
+      - 'docs/runbooks/live-usb-real-build-plan.md'
+      - 'docs/security/live-usb-real-build-safety.md'
+      - 'docs/adr/ADR-0007-live-usb-real-build-gate.md'
+      - 'docs/notes/WB-HIVE-BOOT-0003-source-map.md'
+      - 'scripts/validate-live-usb-real-build-plan.sh'
+      - '.github/workflows/live-usb-real-build-plan.yml'
+      - '.gitignore'
+
+permissions:
+  contents: read
+
+jobs:
+  real-build-plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate real build plan scope
+        shell: sh
+        run: sh scripts/validate-live-usb-real-build-plan.sh
