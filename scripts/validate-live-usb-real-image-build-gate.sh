@@ -160,6 +160,8 @@ grep -n 'ref: \${{ env.CYBERHIVE_APPROVED_HEAD_SHA }}' "$gate_workflow" >/dev/nu
 grep -n 'test "$actual_head" = "$CYBERHIVE_APPROVED_HEAD_SHA"' "$gate_workflow" >/dev/null
 grep -n 'CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL: BUILD_IMAGE_ONLY_NO_USB' "$gate_workflow" >/dev/null
 grep -n 'persist-credentials: false' "$gate_workflow" >/dev/null
+grep -n 'include-hidden-files: true' "$gate_workflow" >/dev/null
+grep -n 'if-no-files-found: error' "$gate_workflow" >/dev/null
 grep -n 'retention-days: 30' "$gate_workflow" >/dev/null
 if grep -n "github.event.action == 'synchronize'.*approved:image-build-only" "$gate_workflow"; then
   echo 'a synchronize event must not reuse a previous image-build approval label' >&2
