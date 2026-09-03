@@ -103,5 +103,6 @@ jobs:
             .cyberhive-live-real-build/*.manifest.json
             .cyberhive-live-real-build/*.build-log.txt
             .cyberhive-live-real-build/*.packages.txt
-          if-no-files-found: warn
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 30
