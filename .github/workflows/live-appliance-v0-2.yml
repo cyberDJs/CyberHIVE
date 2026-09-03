@@ -1,0 +1,48 @@
+name: Live Appliance v0.2
+
+on:
+  pull_request:
+    paths:
+      - 'assets/brand/runtime/**'
+      - 'docs/ROADMAP.md'
+      - 'docs/PROJECT_CONTEXT.md'
+      - 'docs/architecture/live-usb-runtime-surface.md'
+      - 'docs/work-blocks/WB-HIVE-BOOT-0005-live-appliance-v0-2.md'
+      - 'docs/adr/ADR-0009-live-appliance-local-control-plane.md'
+      - 'docs/runbooks/live-appliance-v0-2.md'
+      - 'docs/security/live-appliance-v0-2-safety.md'
+      - 'docs/evidence/WB-HIVE-BOOT-0004-physical-boot-2026-09-03.md'
+      - 'infra/live-usb/**'
+      - 'scripts/validate-live-appliance-v0-2.sh'
+      - '.github/workflows/live-appliance-v0-2.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'assets/brand/runtime/**'
+      - 'docs/ROADMAP.md'
+      - 'docs/PROJECT_CONTEXT.md'
+      - 'docs/architecture/live-usb-runtime-surface.md'
+      - 'docs/work-blocks/WB-HIVE-BOOT-0005-live-appliance-v0-2.md'
+      - 'docs/adr/ADR-0009-live-appliance-local-control-plane.md'
+      - 'docs/runbooks/live-appliance-v0-2.md'
+      - 'docs/security/live-appliance-v0-2-safety.md'
+      - 'docs/evidence/WB-HIVE-BOOT-0004-physical-boot-2026-09-03.md'
+      - 'infra/live-usb/**'
+      - 'scripts/validate-live-appliance-v0-2.sh'
+      - '.github/workflows/live-appliance-v0-2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-live-appliance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate Live Appliance v0.2 contract
+        shell: sh
+        run: sh scripts/validate-live-appliance-v0-2.sh

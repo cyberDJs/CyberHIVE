@@ -9,6 +9,7 @@ on:
       - labeled
     paths:
       - 'infra/live-usb/**'
+      - 'assets/brand/runtime/**'
       - 'docs/work-blocks/WB-HIVE-BOOT-0004-real-image-build-gate.md'
       - 'docs/runbooks/live-usb-real-image-build-gate.md'
       - 'docs/security/live-usb-real-image-build-safety.md'
@@ -23,6 +24,7 @@ on:
       - main
     paths:
       - 'infra/live-usb/**'
+      - 'assets/brand/runtime/**'
       - 'docs/work-blocks/WB-HIVE-BOOT-0004-real-image-build-gate.md'
       - 'docs/runbooks/live-usb-real-image-build-gate.md'
       - 'docs/security/live-usb-real-image-build-safety.md'
@@ -91,7 +93,7 @@ jobs:
             --env CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL \
             --env CYBERHIVE_REAL_IMAGE_BUILDER_LABEL \
             debian:bookworm-slim \
-            sh -c 'apt-get update && apt-get install -y --no-install-recommends live-build ca-certificates git rsync xorriso isolinux syslinux-common squashfs-tools && git config --global --add safe.directory /workspace && sh infra/live-usb/debian-live/build-real-image.sh'
+            sh -c 'apt-get update && apt-get install -y --no-install-recommends live-build ca-certificates git rsync xorriso isolinux syslinux-common squashfs-tools librsvg2-bin && git config --global --add safe.directory /workspace && sh infra/live-usb/debian-live/build-real-image.sh'
       - name: Upload exact-head build evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4

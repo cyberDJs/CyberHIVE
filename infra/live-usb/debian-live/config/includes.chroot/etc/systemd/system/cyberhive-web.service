@@ -1,0 +1,24 @@
+[Unit]
+Description=CyberHIVE local browser control plane
+Requires=cyberhive-onboarding-init.service
+After=cyberhive-onboarding-init.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cyberhive
+Group=cyberhive
+Environment=CYBERHIVE_WEB_PORT=80
+ExecStart=/usr/local/bin/cyberhive-web
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/run/cyberhive
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

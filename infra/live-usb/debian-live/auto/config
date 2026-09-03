@@ -1,14 +1,13 @@
 #!/bin/sh
 set -eu
 
-# CyberHIVE Live USB build configuration skeleton.
-# This file is intentionally conservative: it defines the expected live-build
-# shape without claiming that an ISO has been built or boot-tested yet.
-
+# CyberHIVE Live Appliance v0.2 build configuration.
 lb config \
   --distribution bookworm \
   --archive-areas "main contrib non-free-firmware" \
   --binary-images iso-hybrid \
+  --bootloaders "syslinux grub-efi" \
   --bootappend-live "boot=live components quiet splash username=cyberhive hostname=cyberhive-live" \
+  --bootappend-live-failsafe "boot=live components username=cyberhive hostname=cyberhive-live systemd.unit=multi-user.target" \
   --debian-installer false \
   --memtest none

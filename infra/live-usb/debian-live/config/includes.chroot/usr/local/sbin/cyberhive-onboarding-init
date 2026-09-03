@@ -1,0 +1,113 @@
+#!/bin/sh
+set -eu
+
+. /etc/cyberhive/live/config.env
+umask 077
+
+mkdir -p "$CYBERHIVE_EVIDENCE_DIR" "$CYBERHIVE_CACHE_DIR" "$CYBERHIVE_STATE_DIR" "$CYBERHIVE_CONTROL_DIR" "$CYBERHIVE_PRIVATE_DIR" /run/cyberhive/config-media
+
+if ! id cyberhive >/dev/null 2>&1; then
+  echo 'cyberhive-onboarding-init: live user cyberhive does not exist' >&2
+  exit 2
+fi
+
+chown cyberhive:cyberhive "$CYBERHIVE_EVIDENCE_DIR" "$CYBERHIVE_CACHE_DIR" "$CYBERHIVE_CONTROL_DIR"
+chmod 0750 "$CYBERHIVE_EVIDENCE_DIR" "$CYBERHIVE_CACHE_DIR" "$CYBERHIVE_CONTROL_DIR"
+chown root:cyberhive "$CYBERHIVE_PRIVATE_DIR"
+chmod 0750 "$CYBERHIVE_PRIVATE_DIR"
+
+random_password=$(python3 -c 'import secrets; a="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"; print("".join(secrets.choice(a) for _ in range(8)))')
+pairing_code=$(python3 -c 'import secrets; print(f"{secrets.randbelow(1000000):06d}")')
+session_id=$(python3 -c 'import secrets; print(secrets.token_hex(8))')
+
+printf '%s\n' "$pairing_code" >"$CYBERHIVE_PRIVATE_DIR/pairing-code"
+printf '%s\n' "$session_id" >"$CYBERHIVE_STATE_DIR/session-id"
+chown root:cyberhive "$CYBERHIVE_PRIVATE_DIR/pairing-code" "$CYBERHIVE_STATE_DIR/session-id"
+chmod 0640 "$CYBERHIVE_PRIVATE_DIR/pairing-code" "$CYBERHIVE_STATE_DIR/session-id"
+
+config_state='absent'
+auth_mode='ephemeral-password'
+config_mount='/run/cyberhive/config-media'
+cfg_dev=$(blkid -L "$CYBERHIVE_CONFIG_LABEL" 2>/dev/null || true)
+
+valid_authorized_keys() {
+  file=$1
+  [ -s "$file" ] || return 1
+  bytes=$(wc -c <"$file" | tr -d ' ')
+  [ "$bytes" -le 65536 ] || return 1
+  awk '
+    BEGIN { good=0; bad=0 }
+    /^[[:space:]]*($|#)/ { next }
+    $1 ~ /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com)$/ { good++; next }
+    { bad++ }
+    END { exit !(good > 0 && bad == 0) }
+  ' "$file"
+}
+
+key_source=''
+if [ -n "$cfg_dev" ]; then
+  mounted_at=$(findmnt -nr -S "$cfg_dev" -o TARGET 2>/dev/null | head -n 1 || true)
+  if [ -n "$mounted_at" ]; then
+    mount_opts=$(findmnt -nr -S "$cfg_dev" -o OPTIONS 2>/dev/null | head -n 1 || true)
+    case ",$mount_opts," in
+      *,ro,*) config_mount=$mounted_at; config_state='mounted-read-only' ;;
+      *) config_state='rejected-existing-writable-mount' ;;
+    esac
+  elif mount -o ro,nodev,nosuid,noexec "$cfg_dev" "$config_mount"; then
+    config_state='mounted-read-only'
+  else
+    config_state='mount-failed'
+  fi
+
+  if [ "$config_state" = 'mounted-read-only' ] && valid_authorized_keys "$config_mount/authorized_keys"; then
+    key_source="$config_mount/authorized_keys"
+  fi
+fi
+
+mkdir -p /etc/ssh/sshd_config.d
+if [ -n "$key_source" ]; then
+  install -d -m 0700 -o cyberhive -g cyberhive /home/cyberhive/.ssh
+  install -m 0600 -o cyberhive -g cyberhive "$key_source" /home/cyberhive/.ssh/authorized_keys
+  passwd -l cyberhive >/dev/null 2>&1 || true
+  auth_mode='key'
+  cat >/etc/ssh/sshd_config.d/01-cyberhive-runtime.conf <<'EOF'
+PasswordAuthentication no
+AuthenticationMethods publickey
+EOF
+  rm -f "$CYBERHIVE_PRIVATE_DIR/ssh-password"
+else
+  printf 'cyberhive:%s\n' "$random_password" | chpasswd
+  printf '%s\n' "$random_password" >"$CYBERHIVE_PRIVATE_DIR/ssh-password"
+  chown root:cyberhive "$CYBERHIVE_PRIVATE_DIR/ssh-password"
+  chmod 0640 "$CYBERHIVE_PRIVATE_DIR/ssh-password"
+  cat >/etc/ssh/sshd_config.d/01-cyberhive-runtime.conf <<'EOF'
+PasswordAuthentication yes
+AuthenticationMethods any
+EOF
+fi
+
+printf '%s\n' "$auth_mode" >"$CYBERHIVE_PRIVATE_DIR/ssh-mode"
+printf '%s\n' "$config_state" >"$CYBERHIVE_STATE_DIR/config-media-state"
+chown root:cyberhive "$CYBERHIVE_PRIVATE_DIR/ssh-mode" "$CYBERHIVE_STATE_DIR/config-media-state"
+chmod 0640 "$CYBERHIVE_PRIVATE_DIR/ssh-mode" "$CYBERHIVE_STATE_DIR/config-media-state"
+
+# Host keys are generated into the ephemeral live overlay at each boot. The
+# build hook removes build-time host keys so copies of the ISO never share one.
+ssh-keygen -A >/dev/null
+/usr/sbin/sshd -t
+
+host_fingerprint=$(ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256 2>/dev/null | awk '{print $2}' || true)
+printf '%s\n' "$host_fingerprint" >"$CYBERHIVE_STATE_DIR/ssh-host-fingerprint"
+chown root:cyberhive "$CYBERHIVE_STATE_DIR/ssh-host-fingerprint"
+chmod 0640 "$CYBERHIVE_STATE_DIR/ssh-host-fingerprint"
+
+jq -n \
+  --arg session_id "$session_id" \
+  --arg ssh_auth_mode "$auth_mode" \
+  --arg config_media "$config_state" \
+  --arg ssh_host_fingerprint "$host_fingerprint" \
+  '{schema:"cyberhive.live.onboarding.v1",session_id:$session_id,ssh_auth_mode:$ssh_auth_mode,config_media:$config_media,ssh_host_fingerprint:$ssh_host_fingerprint}' \
+  >"$CYBERHIVE_EVIDENCE_DIR/onboarding.json"
+
+chown cyberhive:cyberhive "$CYBERHIVE_EVIDENCE_DIR/onboarding.json"
+chmod 0640 "$CYBERHIVE_EVIDENCE_DIR/onboarding.json"

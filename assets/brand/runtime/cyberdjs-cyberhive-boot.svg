@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480" role="img" aria-labelledby="title desc">
+  <title id="title">CYBERDJS CyberHIVE Live Appliance boot graphic</title>
+  <desc id="desc">Dark local-first CyberHIVE runtime mark with geometric hive cells.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#05070b"/>
+      <stop offset="0.55" stop-color="#08151c"/>
+      <stop offset="1" stop-color="#031014"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5ff6ff"/>
+      <stop offset="1" stop-color="#20bfe7"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="640" height="480" fill="url(#bg)"/>
+  <g opacity="0.14" fill="none" stroke="#4beafa" stroke-width="1">
+    <path d="M30 80 60 62 90 80 90 116 60 134 30 116Z"/>
+    <path d="M92 80 122 62 152 80 152 116 122 134 92 116Z"/>
+    <path d="M499 330 529 312 559 330 559 366 529 384 499 366Z"/>
+    <path d="M561 330 591 312 621 330 621 366 591 384 561 366Z"/>
+    <path d="M530 276 560 258 590 276 590 312 560 330 530 312Z"/>
+  </g>
+  <g transform="translate(74 124)" filter="url(#glow)">
+    <path d="M0 52 45 26 90 52 90 104 45 130 0 104Z" fill="none" stroke="url(#cyan)" stroke-width="5"/>
+    <path d="M27 67 45 56 63 67 63 89 45 100 27 89Z" fill="#5ff6ff" opacity="0.9"/>
+    <circle cx="45" cy="78" r="5" fill="#071016"/>
+  </g>
+  <text x="190" y="180" fill="#f2fbff" font-family="DejaVu Sans, sans-serif" font-size="54" font-weight="700" letter-spacing="3">CYBERDJS</text>
+  <text x="192" y="226" fill="#5ff6ff" font-family="DejaVu Sans, sans-serif" font-size="30" font-weight="600" letter-spacing="5">CyberHIVE</text>
+  <text x="194" y="258" fill="#9bb8c2" font-family="DejaVu Sans Mono, monospace" font-size="15" letter-spacing="2">LIVE APPLIANCE v0.2</text>
+  <line x1="74" y1="304" x2="566" y2="304" stroke="#1a6471" stroke-width="1"/>
+  <text x="74" y="344" fill="#d8edf2" font-family="DejaVu Sans Mono, monospace" font-size="14">LOCAL-FIRST / BROWSER-FIRST / SECURE BY DEFAULT</text>
+  <text x="74" y="375" fill="#7ca0aa" font-family="DejaVu Sans Mono, monospace" font-size="12">Web  cyberhive.local   |   SSH  key-first   |   Host disks protected</text>
+  <text x="74" y="414" fill="#3fcfe8" font-family="DejaVu Sans Mono, monospace" font-size="11">CYBERHIVE BOOTING...</text>
+</svg>

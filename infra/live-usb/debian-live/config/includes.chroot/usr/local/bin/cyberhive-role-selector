@@ -1,17 +1,40 @@
 #!/bin/sh
 set -eu
 
-cat <<'MENU'
-CyberHIVE Live USB
-==================
+. /etc/cyberhive/live/config.env
+mkdir -p "$CYBERHIVE_CONTROL_DIR"
 
-Select boot role:
+show_menu() {
+  current=$(cat "$CYBERHIVE_CONTROL_DIR/role" 2>/dev/null || printf '%s' "$CYBERHIVE_DEFAULT_ROLE")
+  cat <<EOF
+CyberHIVE Live Appliance v0.2
+=============================
+Current boot-session role: $current
 
-1. Controller + Worker
-2. Worker Only
-3. DevBridge Mode (disabled until explicit local enable)
-4. Offline Diagnostics
-5. Rescue / Hardware Inventory
+Available role intents:
+  controller-worker
+  worker
+  devbridge-request
+  offline-diagnostics
+  rescue
 
-This skeleton does not start runtime services yet.
-MENU
+Role selection records boot-session intent only.
+It does not enable DevBridge, MCP, remote help or host-disk writes.
+
+Usage: cyberhive-role-selector <role>
+EOF
+}
+
+if [ "$#" -eq 0 ]; then
+  show_menu
+  exit 0
+fi
+
+role=$1
+case "$role" in
+  controller-worker|worker|devbridge-request|offline-diagnostics|rescue) ;;
+  *) echo "invalid CyberHIVE role: $role" >&2; exit 2 ;;
+esac
+
+printf '%s\n' "$role" >"$CYBERHIVE_CONTROL_DIR/role"
+printf 'CyberHIVE boot-session role intent: %s\n' "$role"

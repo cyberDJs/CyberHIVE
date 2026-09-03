@@ -1,21 +1,26 @@
 #!/bin/sh
 set -eu
 
-mkdir -p /run/cyberhive/evidence
-out="/run/cyberhive/evidence/hardware-inventory.json"
+. /etc/cyberhive/live/config.env
+mkdir -p "$CYBERHIVE_EVIDENCE_DIR"
+out="$CYBERHIVE_EVIDENCE_DIR/hardware-inventory.json"
 
-{
-  printf '%s\n' '{'
-  printf '  "schema": "cyberhive.live.hardware_inventory.v0",\n'
-  printf '  "source": "cyberhive-live-usb",\n'
-  printf '  "kernel": '
-  uname -r | jq -R .
-  printf ',\n  "machine": '
-  uname -m | jq -R .
-  printf ',\n  "hostname": '
-  hostname | jq -R .
-  printf ',\n  "notes": "skeleton inventory; richer collectors are future work"\n'
-  printf '%s\n' '}'
-} > "$out"
+cpu_model=$(awk -F: '/model name/ {sub(/^[[:space:]]+/,"",$2); print $2; exit}' /proc/cpuinfo 2>/dev/null || true)
+mem_kib=$(awk '/MemTotal:/ {print $2; exit}' /proc/meminfo 2>/dev/null || true)
+block_json=$(lsblk -J -o NAME,PATH,TYPE,SIZE,RM,RO,FSTYPE,MOUNTPOINTS,MODEL,TRAN 2>/dev/null || printf '%s' '{"blockdevices":[]}')
+network_json=$(ip -j address show 2>/dev/null || printf '%s' '[]')
+pci_text=$(lspci -mm 2>/dev/null | head -n 200 || true)
+
+jq -n \
+  --arg kernel "$(uname -r)" \
+  --arg machine "$(uname -m)" \
+  --arg hostname "$(hostname)" \
+  --arg cpu_model "$cpu_model" \
+  --arg mem_kib "$mem_kib" \
+  --arg pci "$pci_text" \
+  --argjson block "$block_json" \
+  --argjson network "$network_json" \
+  '{schema:"cyberhive.live.hardware_inventory.v1",source:"cyberhive-live-appliance",kernel:$kernel,machine:$machine,hostname:$hostname,cpu:{model:$cpu_model},memory:{total_kib:$mem_kib},block:$block,network:$network,pci:$pci}' \
+  >"$out"
 
 cat "$out"

@@ -1,13 +1,12 @@
-# CyberHIVE Live USB package seed.
-# Keep this minimal until the first build is verified.
-#
-# v0.1 intentionally avoids enabling local discovery daemons. Discovery tools
-# may be introduced later only with explicit disabled-by-default policy.
+# CyberHIVE Live Appliance v0.2 package seed.
 
 systemd
 systemd-sysv
 network-manager
 openssh-client
+openssh-server
+avahi-daemon
+qrencode
 curl
 jq
 python3
@@ -21,3 +20,5 @@ iproute2
 iputils-ping
 dnsutils
 ca-certificates
+util-linux
+sudo
