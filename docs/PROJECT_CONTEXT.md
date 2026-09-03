@@ -1,8 +1,8 @@
 # CyberHIVE AI — Project Context
 
-**Status:** Discovery / Architecture  
-**Current milestone:** M0 — Architecture and runnable local prototype  
-**Last updated:** 2026-08-23  
+**Status:** Active prototype / appliance hardening  
+**Current milestone:** M1.1 — CyberHIVE Live Appliance v0.2  
+**Last updated:** 2026-09-03  
 **Canonical repository:** `cyberDJs/CyberHIVE`  
 **Canonical Drive folder:** `CyberHIVE` (`14LjBzaT5vjbULTKqAK6zt3UUydixVqUW`)
 
@@ -12,13 +12,19 @@ CyberHIVE is an open-source, local-first platform for secure operation, orchestr
 
 ## Initial target
 
-- Ryzen-class x86_64 CPU
+- x86_64 owned hardware
 - 32 GB RAM reference profile
-- NVIDIA RTX 3070 reference GPU
-- headless Linux
-- web administration
-- optional kiosk mode
+- NVIDIA RTX 3070 reference GPU for later inference work
+- headless-first Linux appliance
+- browser-first administration
+- optional later local desktop/kiosk profile
 - one controller and one or more workers
+
+## Proven Live USB baseline
+
+The first Debian 12/bookworm CyberHIVE Live USB candidate was built from the PR #27 exact head `63c14dba7fd28b8a0d53c23bbda766b06d950260`, written to removable media, verified byte-for-byte, and physically booted on x86_64 hardware on 2026-09-03.
+
+That evidence proves image creation, media integrity and a physical boot into the CyberHIVE live shell. It does not by itself prove every host-disk safety claim, remote-access behavior, deployment behavior or ADR acceptance.
 
 ## Core capabilities
 
@@ -30,7 +36,7 @@ CyberHIVE is an open-source, local-first platform for secure operation, orchestr
 - API and web console
 - skill registry and later skill composition
 - updates, rollback and recovery
-- monitoring and audit
+- monitoring, support evidence and audit
 - optional remote administration
 - future compute/skill marketplace
 
@@ -47,43 +53,34 @@ CyberHIVE is an open-source, local-first platform for secure operation, orchestr
 - open APIs and portable formats
 - measurable performance
 - graceful offline operation
-
-## Non-goals for MVP
-
-- own foundation model
-- global decentralized compute network
-- public marketplace
-- full enterprise multi-tenancy
-- cryptocurrency incentives
-- universal GPU/OS support
-
-## Terminology
-
-- **Hive Controller** — orchestration/control node
-- **Worker Node** — compute node
-- **Appliance** — self-contained CyberHIVE installation
-- **Model Runtime** — inference backend
-- **Skill** — reusable operational workflow
-- **Connector** — integration with an external service
+- browser-first control plane before desktop duplication
 
 ## Current decisions
 
-- no desktop environment in the base install
-- web UI as primary administration surface
-- RTX 3070 as first reference GPU
+- Debian 12/bookworm is the first proven Live USB candidate base; this does not yet freeze every future installation profile.
+- web UI is the primary administration surface
+- no desktop environment in the base image; a later optional desktop reuses the same web UI/API
+- SSH server is part of Live Appliance v0.2
+- SSH bootstrap uses key-first mode from a `CYBERHIVE_CFG` config medium, with an ephemeral password fallback only when no key is available
+- root SSH login remains disabled
+- local browser discovery uses mDNS with `cyberhive.local` plus an IPv4 fallback
+- browser control requires a local pairing code for the boot session
+- live root remains ephemeral/read-only by design; persistence must be explicit
+- internal host-disk writes remain outside the default runtime boundary
+- remote help remains disabled until an explicit local enable action
 - containers allowed; Kubernetes optional
 - cloud features optional
 - updates must support rollback
 
 ## Open decisions
 
-- base Linux distribution
 - inference runtime(s)
-- API gateway strategy
-- service/node discovery
+- stable local API implementation and versioning
 - model registry format
-- LiveUSB/appliance distribution path
 - node identity and enrollment protocol
+- supported persistence/config-media provisioning format
+- release signing and Secure Boot strategy
+- desktop profile and local prompt UX after the browser control plane stabilizes
 
 ## Definition of done
 

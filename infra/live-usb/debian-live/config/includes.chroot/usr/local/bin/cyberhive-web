@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+import hmac
+import json
+import os
+import secrets
+import subprocess
+import time
+from http import HTTPStatus
+from http.cookies import SimpleCookie
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+CONTROL = Path('/run/cyberhive/control')
+STATE = Path('/run/cyberhive/state')
+EVIDENCE = Path('/run/cyberhive/evidence')
+PAIR_FILE = CONTROL / 'pairing-code'
+TOKEN_FILE = CONTROL / 'web-session-token'
+ROLE_FILE = CONTROL / 'role'
+PORT = int(os.environ.get('CYBERHIVE_WEB_PORT', '80'))
+ROLES = {'controller-worker', 'worker', 'devbridge-request', 'offline-diagnostics', 'rescue'}
+ATTEMPTS = {}
+
+CONTROL.mkdir(parents=True, exist_ok=True)
+EVIDENCE.mkdir(parents=True, exist_ok=True)
+SESSION_TOKEN = secrets.token_urlsafe(32)
+TOKEN_FILE.write_text(SESSION_TOKEN + '\n', encoding='utf-8')
+os.chmod(TOKEN_FILE, 0o600)
+
+HTML = r'''<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CyberHIVE Live Appliance</title>
+<style>
+:root{color-scheme:dark;--bg:#05080d;--panel:#0b151c;--line:#163945;--cyan:#5ff6ff;--text:#e7f7fb;--muted:#85a7b1;--bad:#ff7b86}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% 10%,#0b2730 0,#05080d 42%);font:15px/1.5 system-ui,sans-serif;color:var(--text)}main{max-width:1100px;margin:auto;padding:34px}header{display:flex;gap:18px;align-items:center;margin-bottom:28px}.mark{width:72px;height:72px}.brand{font-size:31px;font-weight:800;letter-spacing:.12em}.sub{color:var(--cyan);letter-spacing:.18em}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}.card{background:rgba(11,21,28,.92);border:1px solid var(--line);border-radius:14px;padding:18px;min-height:130px}.label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.12em}.value{font:16px ui-monospace,monospace;margin-top:8px;word-break:break-word}.ok{color:var(--cyan)}.bad{color:var(--bad)}button,select,input{background:#0d2028;color:var(--text);border:1px solid #245765;border-radius:8px;padding:10px}button{cursor:pointer}button:hover{border-color:var(--cyan)}#pair{margin:20px 0;padding:15px;border:1px solid #245765;border-radius:12px}.small{font-size:12px;color:var(--muted)}pre{white-space:pre-wrap;word-break:break-word}.wide{grid-column:1/-1}</style></head>
+<body><main><header><svg class="mark" viewBox="0 0 100 100" aria-hidden="true"><path d="M8 28 50 4 92 28v48L50 100 8 76Z" fill="none" stroke="#5ff6ff" stroke-width="5"/><path d="M32 42 50 32 68 42v20L50 72 32 62Z" fill="#5ff6ff"/></svg><div><div class="brand">CYBERDJS</div><div class="sub">CyberHIVE / LIVE APPLIANCE v0.2</div></div></header>
+<div id="pair"><strong>Local pairing</strong> <span id="pairState" class="small">not paired</span><br><input id="pairCode" inputmode="numeric" maxlength="6" placeholder="6-digit code"><button onclick="pair()">Pair browser</button><div class="small">The code is shown only on the physical CyberHIVE console.</div></div>
+<div class="grid"><div class="card"><div class="label">Node</div><div id="node" class="value">loading</div></div><div class="card"><div class="label">Network</div><div id="network" class="value">loading</div></div><div class="card"><div class="label">SSH</div><div id="ssh" class="value">loading</div></div><div class="card"><div class="label">Host disk guard</div><div id="guard" class="value">loading</div></div><div class="card"><div class="label">Remote help</div><div id="remote" class="value">disabled</div></div><div class="card"><div class="label">Role intent</div><select id="role"><option>controller-worker</option><option>worker</option><option>devbridge-request</option><option>offline-diagnostics</option><option>rescue</option></select> <button onclick="setRole()">Set</button><div id="roleState" class="small"></div></div><div class="card wide"><div class="label">Support evidence</div><button onclick="support()">Build support bundle</button> <a id="download" hidden href="/api/support-download">download latest</a><div id="supportState" class="small"></div></div><div class="card wide"><div class="label">Health JSON</div><pre id="health">loading</pre></div></div>
+</main><script>
+async function req(path,opt){const r=await fetch(path,opt);const t=await r.text();let d;try{d=JSON.parse(t)}catch{d={error:t}}if(!r.ok)throw new Error(d.error||r.statusText);return d}
+async function refresh(){try{const h=await req('/api/health');health.textContent=JSON.stringify(h,null,2);node.textContent=`${h.hostname} / ${h.version} / session ${h.session_id}`;network.textContent=h.ipv4?`${h.ipv4} / http://cyberhive.local`:'waiting for address';ssh.textContent=`${h.ssh.service} / ${h.ssh.auth_mode} / ${h.ssh.host_fingerprint}`;guard.textContent=h.host_disk_guard;guard.className='value '+(h.host_disk_guard==='pass'?'ok':'bad');remote.textContent=h.remote_help;const s=await req('/api/session');pairState.textContent=s.paired?'paired':'not paired';role.value=s.role||'controller-worker'}catch(e){health.textContent=e.message}}
+async function pair(){try{await req('/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:pairCode.value})});pairCode.value='';await refresh()}catch(e){pairState.textContent=e.message}}
+async function setRole(){try{const d=await req('/api/role',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:role.value})});roleState.textContent='saved: '+d.role;await refresh()}catch(e){roleState.textContent=e.message}}
+async function support(){try{const d=await req('/api/support',{method:'POST'});supportState.textContent=d.bundle;download.hidden=false}catch(e){supportState.textContent=e.message}}
+refresh();setInterval(refresh,10000)
+</script></body></html>'''
+
+def run_json(argv):
+    proc = subprocess.run(argv, capture_output=True, text=True, timeout=8, check=False)
+    if proc.returncode not in (0, 4):
+        return {'status': 'error', 'command': argv[0], 'detail': proc.stderr.strip() or proc.stdout.strip()}
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {'status': 'error', 'command': argv[0], 'detail': proc.stdout.strip()}
+
+def cookie_token(headers):
+    raw = headers.get('Cookie', '')
+    cookie = SimpleCookie()
+    try:
+        cookie.load(raw)
+    except Exception:
+        return ''
+    morsel = cookie.get('cyberhive_session')
+    return morsel.value if morsel else ''
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = 'CyberHIVE/0.2'
+
+    def security_headers(self, content_type='application/json; charset=utf-8'):
+        self.send_header('Content-Type', content_type)
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('X-Frame-Options', 'DENY')
+        self.send_header('Referrer-Policy', 'no-referrer')
+        self.send_header('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'")
+
+    def send_json(self, status, payload, extra_headers=None):
+        body = json.dumps(payload, separators=(',', ':')).encode()
+        self.send_response(status)
+        self.security_headers()
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def is_paired(self):
+        supplied = cookie_token(self.headers)
+        return bool(supplied) and hmac.compare_digest(supplied, SESSION_TOKEN)
+
+    def require_pairing(self):
+        if self.is_paired():
+            return True
+        self.send_json(HTTPStatus.UNAUTHORIZED, {'error': 'local pairing required'})
+        return False
+
+    def read_json_body(self):
+        length = int(self.headers.get('Content-Length', '0') or '0')
+        if length < 0 or length > 4096:
+            raise ValueError('request body too large')
+        data = self.rfile.read(length)
+        return json.loads(data or b'{}')
+
+    def do_GET(self):
+        if self.path == '/':
+            body = HTML.encode()
+            self.send_response(HTTPStatus.OK)
+            self.security_headers('text/html; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == '/api/health':
+            self.send_json(HTTPStatus.OK, run_json(['/usr/local/bin/cyberhive-live-health']))
+            return
+        if self.path == '/api/inventory':
+            self.send_json(HTTPStatus.OK, run_json(['/usr/local/bin/cyberhive-inventory']))
+            return
+        if self.path == '/api/session':
+            role = ROLE_FILE.read_text().strip() if ROLE_FILE.exists() else 'role-selector'
+            mode_file = STATE / 'ssh-mode'
+            mode = mode_file.read_text().strip() if mode_file.exists() else 'initializing'
+            self.send_json(HTTPStatus.OK, {'paired': self.is_paired(), 'role': role, 'ssh_auth_mode': mode, 'remote_help': 'disabled'})
+            return
+        if self.path == '/api/support-download':
+            if not self.require_pairing():
+                return
+            bundles = sorted(EVIDENCE.glob('support-*.tar.gz'), key=lambda p: p.stat().st_mtime, reverse=True)
+            if not bundles:
+                self.send_json(HTTPStatus.NOT_FOUND, {'error': 'no support bundle generated'})
+                return
+            target = bundles[0]
+            body = target.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.security_headers('application/gzip')
+            self.send_header('Content-Disposition', f'attachment; filename="{target.name}"')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_json(HTTPStatus.NOT_FOUND, {'error': 'not found'})
+
+    def do_POST(self):
+        if self.path == '/api/pair':
+            now = time.monotonic()
+            peer = self.client_address[0]
+            recent = [t for t in ATTEMPTS.get(peer, []) if now - t < 60]
+            if len(recent) >= 5:
+                ATTEMPTS[peer] = recent
+                self.send_json(HTTPStatus.TOO_MANY_REQUESTS, {'error': 'pairing rate limit exceeded'})
+                return
+            recent.append(now)
+            ATTEMPTS[peer] = recent
+            try:
+                supplied = str(self.read_json_body().get('code', ''))
+                expected = PAIR_FILE.read_text().strip()
+            except Exception:
+                self.send_json(HTTPStatus.BAD_REQUEST, {'error': 'invalid pairing request'})
+                return
+            if not hmac.compare_digest(supplied, expected):
+                self.send_json(HTTPStatus.UNAUTHORIZED, {'error': 'invalid pairing code'})
+                return
+            ATTEMPTS.pop(peer, None)
+            self.send_json(HTTPStatus.OK, {'paired': True}, {'Set-Cookie': f'cyberhive_session={SESSION_TOKEN}; HttpOnly; SameSite=Strict; Path=/'})
+            return
+        if self.path == '/api/role':
+            if not self.require_pairing():
+                return
+            try:
+                role = str(self.read_json_body().get('role', ''))
+            except Exception:
+                self.send_json(HTTPStatus.BAD_REQUEST, {'error': 'invalid role request'})
+                return
+            if role not in ROLES:
+                self.send_json(HTTPStatus.BAD_REQUEST, {'error': 'unsupported role'})
+                return
+            ROLE_FILE.write_text(role + '\n', encoding='utf-8')
+            self.send_json(HTTPStatus.OK, {'role': role, 'effect': 'boot-session intent only'})
+            return
+        if self.path == '/api/support':
+            if not self.require_pairing():
+                return
+            proc = subprocess.run(['/usr/local/bin/cyberhive-support-bundle'], capture_output=True, text=True, timeout=20, check=False)
+            if proc.returncode != 0:
+                self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {'error': proc.stderr.strip() or 'support bundle failed'})
+                return
+            bundle = Path(proc.stdout.strip().splitlines()[-1]).name
+            self.send_json(HTTPStatus.OK, {'bundle': bundle})
+            return
+        self.send_json(HTTPStatus.NOT_FOUND, {'error': 'not found'})
+
+    def log_message(self, fmt, *args):
+        print(f'{self.client_address[0]} - {fmt % args}', flush=True)
+
+if __name__ == '__main__':
+    ThreadingHTTPServer(('0.0.0.0', PORT), Handler).serve_forever()

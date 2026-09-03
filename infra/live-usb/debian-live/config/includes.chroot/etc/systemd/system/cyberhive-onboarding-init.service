@@ -1,0 +1,12 @@
+[Unit]
+Description=CyberHIVE per-boot local onboarding bootstrap
+After=local-fs.target live-config.service
+Before=ssh.service cyberhive-web.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cyberhive-onboarding-init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

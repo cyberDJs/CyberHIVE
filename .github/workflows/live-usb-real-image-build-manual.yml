@@ -57,7 +57,7 @@ jobs:
             --env CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL \
             --env CYBERHIVE_REAL_IMAGE_BUILDER_LABEL \
             debian:bookworm-slim \
-            sh -c 'apt-get update && apt-get install -y --no-install-recommends live-build ca-certificates rsync xorriso isolinux syslinux-common squashfs-tools && sh infra/live-usb/debian-live/build-real-image.sh'
+            sh -c 'apt-get update && apt-get install -y --no-install-recommends live-build ca-certificates rsync xorriso isolinux syslinux-common squashfs-tools librsvg2-bin fonts-dejavu-core && sh infra/live-usb/debian-live/build-real-image.sh'
       - name: Upload build evidence
         if: ${{ always() && github.event.inputs.run_build == 'true' }}
         uses: actions/upload-artifact@v4

@@ -1,0 +1,36 @@
+#!/bin/sh
+set -eu
+
+. /etc/cyberhive/live/config.env
+mkdir -p "$CYBERHIVE_EVIDENCE_DIR"
+
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+session_id=$(cat "$CYBERHIVE_STATE_DIR/session-id" 2>/dev/null || printf '%s' unknown)
+out="$CYBERHIVE_EVIDENCE_DIR/support-$session_id-$stamp.tar.gz"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+
+cyberhive-live-health >"$tmp/health.json" 2>&1 || true
+cyberhive-inventory >"$tmp/inventory.json" 2>&1 || true
+cyberhive-host-disk-guard >"$tmp/host-disk-guard.json" 2>&1 || true
+ip -br address >"$tmp/network.txt" 2>&1 || true
+ip route >"$tmp/routes.txt" 2>&1 || true
+lsblk -o NAME,PATH,TYPE,SIZE,RM,RO,FSTYPE,MOUNTPOINTS,MODEL,TRAN >"$tmp/block-devices.txt" 2>&1 || true
+findmnt >"$tmp/mounts.txt" 2>&1 || true
+{
+  for unit in ssh cyberhive-onboarding-init cyberhive-web cyberhive-host-disk-guard avahi-daemon cyberhive-live-agent; do
+    printf '%s=' "$unit"
+    systemctl is-active "$unit" 2>/dev/null || true
+  done
+} >"$tmp/services.txt"
+journalctl --no-pager -n 200 -u ssh -u cyberhive-onboarding-init -u cyberhive-web -u cyberhive-host-disk-guard -u avahi-daemon >"$tmp/journal.txt" 2>&1 || true
+
+cat >"$tmp/README.txt" <<'EOF'
+CyberHIVE bounded support bundle.
+Authentication material is intentionally excluded.
+This bundle does not include pairing codes, session tokens, temporary SSH passwords, private SSH keys or /etc/shadow.
+EOF
+
+tar -C "$tmp" -czf "$out" .
+chmod 0640 "$out"
+printf '%s\n' "$out"

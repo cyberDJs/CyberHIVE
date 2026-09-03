@@ -2,4 +2,9 @@ version: 1
 source_drive:
   folder_name: CyberHIVE
   folder_id: 14LjBzaT5vjbULTKqAK6zt3UUydixVqUW
-assets: []
+assets:
+  - id: cyberhive-live-appliance-boot-v0-2
+    path: assets/brand/runtime/cyberdjs-cyberhive-boot.svg
+    media_type: image/svg+xml
+    status: implementation-candidate
+    work_block: WB-HIVE-BOOT-0005

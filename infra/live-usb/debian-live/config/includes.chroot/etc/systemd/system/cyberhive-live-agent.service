@@ -1,7 +1,7 @@
 [Unit]
-Description=CyberHIVE Live USB Agent Skeleton
+Description=CyberHIVE Live Appliance health surface
 Documentation=file:/usr/local/bin/cyberhive-live-health
-After=network-online.target
+After=network-online.target cyberhive-onboarding-init.service cyberhive-host-disk-guard.service
 Wants=network-online.target
 
 [Service]

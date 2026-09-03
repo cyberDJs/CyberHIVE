@@ -1,0 +1,12 @@
+[Unit]
+Description=CyberHIVE host disk write boundary guard
+After=local-fs.target
+Before=cyberhive-live-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/cyberhive-host-disk-guard
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

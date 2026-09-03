@@ -1,11 +1,53 @@
 #!/bin/sh
 set -eu
 
-printf '%s\n' '{'
-printf '  "service": "cyberhive-live",\n'
-printf '  "status": "ok",\n'
-printf '  "mode": "skeleton",\n'
-printf '  "host_disk_write_default": "disabled",\n'
-printf '  "devbridge_default": "disabled",\n'
-printf '  "mcp_default": "disabled"\n'
-printf '%s\n' '}'
+. /etc/cyberhive/live/config.env
+
+service_state() {
+  value=$(systemctl is-active "$1" 2>/dev/null || true)
+  [ -n "$value" ] || value='inactive'
+  printf '%s' "$value"
+}
+
+ip4=$(ip -4 -o addr show scope global 2>/dev/null | awk 'NR==1 {split($4,a,"/"); print a[1]}' || true)
+auth_mode=$(cat "$CYBERHIVE_STATE_DIR/ssh-mode" 2>/dev/null || printf '%s' unknown)
+ssh_bootstrap=$(cat "$CYBERHIVE_STATE_DIR/ssh-bootstrap-status" 2>/dev/null || printf '%s' unknown)
+session_id=$(cat "$CYBERHIVE_STATE_DIR/session-id" 2>/dev/null || printf '%s' unknown)
+fingerprint=$(cat "$CYBERHIVE_STATE_DIR/ssh-host-fingerprint" 2>/dev/null || printf '%s' unknown)
+role=$(cat "$CYBERHIVE_CONTROL_DIR/role" 2>/dev/null || printf '%s' "$CYBERHIVE_DEFAULT_ROLE")
+guard=$(jq -r '.status // "pending"' "$CYBERHIVE_EVIDENCE_DIR/host-disk-guard.json" 2>/dev/null || printf '%s' pending)
+root_source=$(findmnt -nr -o SOURCE / 2>/dev/null || printf '%s' unknown)
+root_fstype=$(findmnt -nr -o FSTYPE / 2>/dev/null || printf '%s' unknown)
+
+onboarding_service=$(service_state cyberhive-onboarding-init)
+ssh_service=$(service_state ssh)
+web_service=$(service_state cyberhive-web)
+mdns_service=$(service_state avahi-daemon)
+
+status='ok'
+if [ "$onboarding_service" != 'active' ] || [ "$ssh_service" != 'active' ] || [ "$web_service" != 'active' ] || [ "$mdns_service" != 'active' ] || [ "$guard" != 'pass' ]; then
+  status='degraded'
+fi
+
+jq -n \
+  --arg status "$status" \
+  --arg version "$CYBERHIVE_LIVE_VERSION" \
+  --arg hostname "$(hostname)" \
+  --arg ipv4 "$ip4" \
+  --arg session_id "$session_id" \
+  --arg role "$role" \
+  --arg onboarding_service "$onboarding_service" \
+  --arg ssh_service "$ssh_service" \
+  --arg ssh_auth_mode "$auth_mode" \
+  --arg ssh_bootstrap "$ssh_bootstrap" \
+  --arg ssh_host_fingerprint "$fingerprint" \
+  --arg web_service "$web_service" \
+  --arg mdns_service "$mdns_service" \
+  --arg host_disk_guard "$guard" \
+  --arg root_source "$root_source" \
+  --arg root_fstype "$root_fstype" \
+  --arg persistence "$CYBERHIVE_PERSISTENCE_DEFAULT" \
+  --arg devbridge "$CYBERHIVE_DEVBRIDGE_DEFAULT" \
+  --arg mcp "$CYBERHIVE_MCP_DEFAULT" \
+  --arg remote_help "$CYBERHIVE_REMOTE_HELP_DEFAULT" \
+  '{schema:"cyberhive.live.health.v1",status:$status,version:$version,hostname:$hostname,ipv4:$ipv4,session_id:$session_id,role:$role,onboarding:{service:$onboarding_service},ssh:{service:$ssh_service,auth_mode:$ssh_auth_mode,bootstrap:$ssh_bootstrap,host_fingerprint:$ssh_host_fingerprint},web:{service:$web_service,url:"http://cyberhive.local"},mdns:{service:$mdns_service},host_disk_guard:$host_disk_guard,root:{source:$root_source,fstype:$root_fstype,persistence:$persistence},devbridge:$devbridge,mcp:$mcp,remote_help:$remote_help}'
