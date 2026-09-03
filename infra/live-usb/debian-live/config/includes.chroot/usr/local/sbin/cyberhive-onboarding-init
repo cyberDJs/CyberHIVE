@@ -10,20 +10,34 @@ if ! id cyberhive >/dev/null 2>&1; then
   echo 'cyberhive-onboarding-init: live user cyberhive does not exist' >&2
   exit 2
 fi
+if ! id "$CYBERHIVE_WEB_USER" >/dev/null 2>&1; then
+  echo 'cyberhive-onboarding-init: web service user does not exist' >&2
+  exit 2
+fi
+if ! getent group "$CYBERHIVE_CONTROL_GROUP" >/dev/null 2>&1; then
+  echo 'cyberhive-onboarding-init: control group does not exist' >&2
+  exit 2
+fi
 
-chown cyberhive:cyberhive "$CYBERHIVE_EVIDENCE_DIR" "$CYBERHIVE_CACHE_DIR" "$CYBERHIVE_CONTROL_DIR"
-chmod 0750 "$CYBERHIVE_EVIDENCE_DIR" "$CYBERHIVE_CACHE_DIR" "$CYBERHIVE_CONTROL_DIR"
+# Shared runtime surfaces are setgid directories. The interactive user owns
+# them; the dedicated web process receives bounded group access. The SSH
+# password remains in a different directory that the web user cannot read.
+for path in "$CYBERHIVE_EVIDENCE_DIR" "$CYBERHIVE_CACHE_DIR" "$CYBERHIVE_STATE_DIR" "$CYBERHIVE_CONTROL_DIR"; do
+  chown cyberhive:"$CYBERHIVE_CONTROL_GROUP" "$path"
+  chmod 2770 "$path"
+done
 chown root:cyberhive "$CYBERHIVE_PRIVATE_DIR"
 chmod 0750 "$CYBERHIVE_PRIVATE_DIR"
+usermod -a -G "$CYBERHIVE_CONTROL_GROUP" cyberhive >/dev/null 2>&1 || true
 
 random_password=$(python3 -c 'import secrets; a="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"; print("".join(secrets.choice(a) for _ in range(8)))')
 pairing_code=$(python3 -c 'import secrets; print(f"{secrets.randbelow(1000000):06d}")')
 session_id=$(python3 -c 'import secrets; print(secrets.token_hex(8))')
 
-printf '%s\n' "$pairing_code" >"$CYBERHIVE_PRIVATE_DIR/pairing-code"
+printf '%s\n' "$pairing_code" >"$CYBERHIVE_CONTROL_DIR/pairing-code"
 printf '%s\n' "$session_id" >"$CYBERHIVE_STATE_DIR/session-id"
-chown root:cyberhive "$CYBERHIVE_PRIVATE_DIR/pairing-code" "$CYBERHIVE_STATE_DIR/session-id"
-chmod 0640 "$CYBERHIVE_PRIVATE_DIR/pairing-code" "$CYBERHIVE_STATE_DIR/session-id"
+chown cyberhive:"$CYBERHIVE_CONTROL_GROUP" "$CYBERHIVE_CONTROL_DIR/pairing-code" "$CYBERHIVE_STATE_DIR/session-id"
+chmod 0640 "$CYBERHIVE_CONTROL_DIR/pairing-code" "$CYBERHIVE_STATE_DIR/session-id"
 
 config_state='absent'
 auth_mode='ephemeral-password'
@@ -86,10 +100,10 @@ AuthenticationMethods any
 EOF
 fi
 
-printf '%s\n' "$auth_mode" >"$CYBERHIVE_PRIVATE_DIR/ssh-mode"
+printf '%s\n' "$auth_mode" >"$CYBERHIVE_STATE_DIR/ssh-mode"
 printf '%s\n' "$config_state" >"$CYBERHIVE_STATE_DIR/config-media-state"
-chown root:cyberhive "$CYBERHIVE_PRIVATE_DIR/ssh-mode" "$CYBERHIVE_STATE_DIR/config-media-state"
-chmod 0640 "$CYBERHIVE_PRIVATE_DIR/ssh-mode" "$CYBERHIVE_STATE_DIR/config-media-state"
+chown cyberhive:"$CYBERHIVE_CONTROL_GROUP" "$CYBERHIVE_STATE_DIR/ssh-mode" "$CYBERHIVE_STATE_DIR/config-media-state"
+chmod 0640 "$CYBERHIVE_STATE_DIR/ssh-mode" "$CYBERHIVE_STATE_DIR/config-media-state"
 
 # Host keys are generated into the ephemeral live overlay at each boot. The
 # build hook removes build-time host keys so copies of the ISO never share one.
@@ -98,7 +112,7 @@ ssh-keygen -A >/dev/null
 
 host_fingerprint=$(ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256 2>/dev/null | awk '{print $2}' || true)
 printf '%s\n' "$host_fingerprint" >"$CYBERHIVE_STATE_DIR/ssh-host-fingerprint"
-chown root:cyberhive "$CYBERHIVE_STATE_DIR/ssh-host-fingerprint"
+chown cyberhive:"$CYBERHIVE_CONTROL_GROUP" "$CYBERHIVE_STATE_DIR/ssh-host-fingerprint"
 chmod 0640 "$CYBERHIVE_STATE_DIR/ssh-host-fingerprint"
 
 jq -n \
@@ -109,5 +123,5 @@ jq -n \
   '{schema:"cyberhive.live.onboarding.v1",session_id:$session_id,ssh_auth_mode:$ssh_auth_mode,config_media:$config_media,ssh_host_fingerprint:$ssh_host_fingerprint}' \
   >"$CYBERHIVE_EVIDENCE_DIR/onboarding.json"
 
-chown cyberhive:cyberhive "$CYBERHIVE_EVIDENCE_DIR/onboarding.json"
+chown cyberhive:"$CYBERHIVE_CONTROL_GROUP" "$CYBERHIVE_EVIDENCE_DIR/onboarding.json"
 chmod 0640 "$CYBERHIVE_EVIDENCE_DIR/onboarding.json"
