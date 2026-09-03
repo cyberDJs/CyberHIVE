@@ -68,7 +68,9 @@ grep -F 'blkid -L "$CYBERHIVE_CONFIG_LABEL"' "$bootstrap" >/dev/null
 grep -F 'mount -o ro,nodev,nosuid,noexec' "$bootstrap" >/dev/null
 grep -F 'PasswordAuthentication no' "$bootstrap" >/dev/null
 grep -F 'PasswordAuthentication yes' "$bootstrap" >/dev/null
+grep -F 'install -d -m 0755 -o root -g root /run/sshd' "$bootstrap" >/dev/null
 grep -F 'ssh-keygen -A' "$bootstrap" >/dev/null
+grep -F 'ssh-bootstrap-status' "$bootstrap" >/dev/null
 grep -F 'chown root:cyberhive "$CYBERHIVE_PRIVATE_DIR"' "$bootstrap" >/dev/null
 grep -F 'chmod 0750 "$CYBERHIVE_PRIVATE_DIR"' "$bootstrap" >/dev/null
 grep -F '"$CYBERHIVE_CONTROL_DIR/pairing-code"' "$bootstrap" >/dev/null
@@ -92,6 +94,11 @@ fi
 web_unit="$root/etc/systemd/system/cyberhive-web.service"
 grep -qx 'User=cyberhive-web' "$web_unit"
 grep -qx 'Group=cyberhive-control' "$web_unit"
+grep -F 'Wants=cyberhive-onboarding-init.service network-online.target' "$web_unit" >/dev/null
+if grep -F 'Requires=cyberhive-onboarding-init.service' "$web_unit"; then
+  echo 'browser control plane must not share the SSH bootstrap failure domain' >&2
+  exit 1
+fi
 grep -qx 'NoNewPrivileges=true' "$web_unit"
 grep -qx 'ProtectHome=true' "$web_unit"
 grep -qx 'CapabilityBoundingSet=CAP_NET_BIND_SERVICE' "$web_unit"
@@ -99,6 +106,11 @@ if grep -qx 'User=cyberhive' "$web_unit"; then
   echo 'browser control plane must not run as SSH/login user' >&2
   exit 1
 fi
+
+health="$root/usr/local/bin/cyberhive-live-health"
+grep -F "status='degraded'" "$health" >/dev/null
+grep -F 'service_state cyberhive-onboarding-init' "$health" >/dev/null
+grep -F 'ssh-bootstrap-status' "$health" >/dev/null
 
 guard="$root/usr/local/bin/cyberhive-host-disk-guard"
 if grep -n -E '(^|[[:space:]])(dd|mkfs|wipefs|parted|fdisk)([[:space:]]|$)' "$guard"; then
@@ -116,7 +128,14 @@ fi
 
 grep -q 'CYBERDJS' assets/brand/runtime/cyberdjs-cyberhive-boot.svg
 grep -q 'CyberHIVE' assets/brand/runtime/cyberdjs-cyberhive-boot.svg
-grep -F 'rsvg-convert --width 640 --height 480' infra/live-usb/debian-live/build-real-image.sh >/dev/null
+build_real='infra/live-usb/debian-live/build-real-image.sh'
+grep -F 'rsvg-convert --width 640 --height 480' "$build_real" >/dev/null
+grep -F 'for bootloader in isolinux syslinux_common grub-pc; do' "$build_real" >/dev/null
+grep -F 'binary/boot/grub/splash.png' "$build_real" >/dev/null
+if grep -F 'for bootloader in isolinux grub-efi; do' "$build_real"; then
+  echo 'UEFI branding must use live-build shared grub-pc source, not a nonexistent grub-efi theme path' >&2
+  exit 1
+fi
 for workflow in .github/workflows/live-usb-real-image-build-gate.yml .github/workflows/live-usb-real-image-build-manual.yml; do
   grep -F 'librsvg2-bin' "$workflow" >/dev/null
   grep -F 'fonts-dejavu-core' "$workflow" >/dev/null
