@@ -30,35 +30,47 @@ printf '%s\n' "$required_paths" | while IFS= read -r path; do
   fi
 done
 
-# Guardrail: every required skeleton file is scanned for obvious credential
-# material or private-key blocks. Keep the pattern conservative and reviewable.
 scan_result="${TMPDIR:-/tmp}/cyberhive-live-secret-scan.txt"
 : > "$scan_result"
 secret_pattern='BEGIN (RSA|OPENSSH|EC|PRIVATE) KEY|password[[:space:]]*=|token[[:space:]]*=|[s]ecret[[:space:]]*='
-
 printf '%s\n' "$required_paths" | while IFS= read -r path; do
   [ -n "$path" ] || continue
   grep -n -E "$secret_pattern" "$path" >>"$scan_result" 2>/dev/null || true
 done
-
 if [ -s "$scan_result" ]; then
   cat "$scan_result" >&2
   echo 'potential secret material found in live USB skeleton' >&2
   exit 1
 fi
 
-# The first skeleton must preserve the hard safety defaults.
-grep -R -n 'DevBridge/MCP: disabled' infra/live-usb/debian-live >/dev/null
-grep -R -n 'Host disk writes: disabled by default' infra/live-usb/debian-live >/dev/null
+live_config='infra/live-usb/debian-live/config/includes.chroot/etc/cyberhive/live/config.env'
+live_version=$(sed -n 's/^CYBERHIVE_LIVE_VERSION="\([^"]*\)"/\1/p' "$live_config")
+[ -n "$live_version" ] || { echo 'CYBERHIVE_LIVE_VERSION missing' >&2; exit 1; }
+
 grep -R -n 'CYBERHIVE_DEVBRIDGE_DEFAULT="disabled"' infra/live-usb/debian-live >/dev/null
 grep -R -n 'CYBERHIVE_MCP_DEFAULT="disabled"' infra/live-usb/debian-live >/dev/null
 grep -R -n 'CYBERHIVE_HOST_DISK_WRITE_DEFAULT="disabled"' infra/live-usb/debian-live >/dev/null
 
-# v0.1 must not ship local discovery daemons until discovery policy is explicit.
-if grep -R -n '^avahi-daemon$' infra/live-usb/debian-live/config/package-lists >/tmp/cyberhive-live-discovery-daemon-scan.txt 2>/dev/null; then
-  cat /tmp/cyberhive-live-discovery-daemon-scan.txt >&2
-  echo 'local discovery daemon must not be enabled in v0.1 package seed' >&2
-  exit 1
-fi
+case "$live_version" in
+  0.1.*)
+    grep -R -n 'DevBridge/MCP: disabled' infra/live-usb/debian-live >/dev/null
+    grep -R -n 'Host disk writes: disabled by default' infra/live-usb/debian-live >/dev/null
+    if grep -R -n '^avahi-daemon$' infra/live-usb/debian-live/config/package-lists >/tmp/cyberhive-live-discovery-daemon-scan.txt 2>/dev/null; then
+      cat /tmp/cyberhive-live-discovery-daemon-scan.txt >&2
+      echo 'local discovery daemon must not be enabled in v0.1 package seed' >&2
+      exit 1
+    fi
+    ;;
+  0.2.*)
+    grep -R -n '^avahi-daemon$' infra/live-usb/debian-live/config/package-lists >/dev/null
+    grep -R -n 'CYBERHIVE_REMOTE_HELP_DEFAULT="disabled"' infra/live-usb/debian-live >/dev/null
+    [ -f docs/security/live-appliance-v0-2-safety.md ]
+    [ -f scripts/validate-live-appliance-v0-2.sh ]
+    ;;
+  *)
+    echo "unsupported live skeleton policy version: $live_version" >&2
+    exit 1
+    ;;
+esac
 
-echo 'CyberHIVE live USB skeleton validation passed'
+echo "CyberHIVE live USB skeleton validation passed for $live_version"
