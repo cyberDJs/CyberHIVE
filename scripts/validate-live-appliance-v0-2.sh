@@ -39,6 +39,13 @@ for script in \
   sh -n "$script"
 done
 
+auto_config='infra/live-usb/debian-live/auto/config'
+grep -F 'lb config noauto \' "$auto_config" >/dev/null
+if grep -n -E '^[[:space:]]*lb[[:space:]]+config[[:space:]]*\\[[:space:]]*$' "$auto_config"; then
+  echo 'auto/config must call lb config with noauto to prevent recursive re-entry' >&2
+  exit 1
+fi
+
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-web").read_text())'
 
 packages='infra/live-usb/debian-live/config/package-lists/cyberhive-live.list.chroot'
