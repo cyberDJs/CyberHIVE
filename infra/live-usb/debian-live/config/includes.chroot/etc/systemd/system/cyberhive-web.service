@@ -1,8 +1,7 @@
 [Unit]
 Description=CyberHIVE local browser control plane
-Requires=cyberhive-onboarding-init.service
+Wants=cyberhive-onboarding-init.service network-online.target
 After=cyberhive-onboarding-init.service network-online.target
-Wants=network-online.target
 
 [Service]
 Type=simple
