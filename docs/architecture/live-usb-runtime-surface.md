@@ -2,69 +2,124 @@
 
 ## Purpose
 
-Define the visible and operational surface of the first CyberHIVE Live USB runtime.
+Define the visible and operational surface of the CyberHIVE Live USB and the v0.2 Live Appliance.
 
-The runtime surface must make the fabric understandable at boot time: what this node is, what it can do, what it will not do, how it is connected, and whether it is safe.
+The runtime must make the node understandable at boot time: what it is, how to reach it, what security mode is active, what it can do, and what it will not do without explicit enablement.
 
 ## Required surfaces
 
-### Boot splash
+### Boot branding
 
-Shows:
+The boot experience must show CyberDJS/CyberHIVE identity before the operator reaches a shell.
 
-- CyberHIVE branding,
-- image version,
-- live USB status,
-- safety statement,
-- boot progress or health stage.
+Requirements:
 
-### Boot role selector
+- reviewable source asset under `assets/brand/runtime/`
+- deterministic build export for the bootloader
+- image version/build identity
+- Live Appliance label
+- usable text fallback when graphics are unavailable
 
-Allows operator to select:
+The source asset is versioned; generated build output is not treated as a new source of truth.
 
-- Controller + Worker,
-- Worker Only,
-- DevBridge Mode,
-- Offline Diagnostics,
-- Rescue / Hardware Inventory.
+### Dynamic local welcome screen
 
-The selector must clearly describe security implications for each role.
+After boot the local console shows:
 
-### Local dashboard
+- CyberDJS / CyberHIVE identity
+- hostname
+- detected IPv4 address when available
+- `http://cyberhive.local`
+- fallback URL using the IPv4 address
+- SSH connect string
+- SSH authentication mode (`key` or `ephemeral-password`)
+- ephemeral password only on a local physical TTY when password mode is active
+- browser pairing code only on a local physical TTY
+- QR code to the local web UI when `qrencode` is available
+- host-disk guard status
+- DevBridge/MCP state
+- remote-help state
 
-Minimum dashboard cards:
+Secrets must not be printed to remote SSH pseudo-terminals.
 
-- node status,
-- hardware inventory,
-- capability map,
-- cache health,
-- network health,
-- DevBridge/MCP state,
-- logs/evidence,
-- cluster peers/topology when joined.
+### SSH 3C bootstrap
+
+At each boot:
+
+1. Look for a filesystem labeled `CYBERHIVE_CFG`.
+2. Mount it read-only with `nodev,nosuid,noexec`.
+3. If a valid `authorized_keys` file exists, install it for the `cyberhive` user and disable SSH password authentication.
+4. Otherwise generate an ephemeral boot password, set it only for the `cyberhive` account, and show it only on the local console.
+5. Root SSH login remains disabled in both modes.
+
+No private SSH key is embedded into the image.
+
+### Browser control plane
+
+Primary operator URL:
+
+```text
+http://cyberhive.local
+```
+
+Fallback:
+
+```text
+http://<detected-ipv4>
+```
+
+Minimum v0.2 cards/surfaces:
+
+- Overview
+- Setup / role selection
+- Network
+- SSH mode
+- Health
+- Hardware inventory
+- Host-disk guard
+- Support/evidence bundle
+- Remote Help status
+
+The browser control plane uses a boot-session pairing code before control actions. Read-only status may be visible before pairing; write/control actions require pairing.
+
+### First-boot role selector
+
+Roles:
+
+- Controller + Worker
+- Worker Only
+- DevBridge Mode (explicit enable required)
+- Offline Diagnostics
+- Rescue / Hardware Inventory
+
+The v0.2 role selection records boot-session intent. It must not silently enable MCP, DevBridge, host-disk writes or remote help.
 
 ### Health endpoint or command
 
-A machine-readable health surface must exist before any large UI is treated as complete.
-
-First image command:
+Machine-readable surfaces:
 
 ```text
 cyberhive-live-health
+GET /api/health
 ```
 
-Future compatibility targets:
+Future product compatibility target:
 
 ```text
-GET /health
 cyberhive health
 ```
 
-Naming rule:
+Health includes at least:
 
-- `cyberhive-live-health` is the low-level live-image health command.
-- `cyberhive health` is the future product CLI alias.
-- `GET /health` is the future local API surface.
+- runtime status
+- live version
+- hostname/IP
+- SSH service/auth mode
+- web service
+- host-disk guard state
+- DevBridge/MCP state
+- remote-help state
+- ephemeral root/persistence state
 
 ### Hardware inventory
 
@@ -72,59 +127,80 @@ Hardware inventory should report capabilities, not just labels.
 
 Capability dimensions:
 
-- CPU,
-- GPU/NPU where available,
-- RAM,
-- VRAM where available,
-- storage type and free space,
-- network interfaces and link state,
-- battery state where available,
-- thermal state where available,
-- platform and architecture,
-- current load.
+- CPU
+- GPU/NPU where available
+- RAM
+- storage devices and transport
+- network interfaces/link state
+- platform and architecture
+- current kernel
 
-## Peer class examples
+### Support/evidence bundle
 
-- heavy compute peer,
-- cache seed peer,
-- controller peer,
-- worker peer,
-- mobile opportunistic peer,
-- watchOS micro-peer,
-- relay peer,
-- diagnostics peer.
+One command produces a bounded support archive containing:
+
+- health output
+- hardware inventory
+- network summary
+- block-device/mount summary
+- selected service state
+- bounded recent logs
+- build/session identity where available
+
+It must exclude SSH private keys, temporary passwords, pairing tokens and other authentication material.
+
+### Host-disk guard
+
+The default Live Appliance must not mount internal fixed disks read-write as part of normal boot.
+
+The guard reports unexpected writable mounts backed by non-removable physical disks and produces machine-readable evidence. The first implementation is detection/fail-closed evidence, not an implicit disk-repair or remount engine.
+
+### Remote help
+
+Remote help is a separate capability from LAN browser control.
+
+Default:
+
+```text
+remote help: disabled
+```
+
+Future enabling requires an explicit local action, a bounded session identity and audit evidence.
+
+### Local desktop and prompt surface
+
+A future optional desktop profile reuses the same local web UI/API instead of implementing a second administration stack.
+
+Target local prompt surface:
+
+- prompt composer
+- plan preview
+- approval boundary
+- execution state
+- evidence/receipts
+- model/runtime selector
+
+The desktop is not required for v0.2 acceptance.
 
 ## Local-first behavior
 
-The runtime should remain useful with no internet connection:
+The runtime remains useful without internet access:
 
-- show local health,
-- collect inventory,
-- inspect cache,
-- export logs,
-- run offline diagnostics,
-- wait for local enrollment/discovery.
-
-## Fabric behavior
-
-When joined to a fabric, the runtime should expose:
-
-- peer list,
-- peer role,
-- link quality,
-- capability summary,
-- cache state,
-- current tasks,
-- recent failures,
-- evidence and receipts.
+- local console and web UI
+- SSH on LAN
+- local health/inventory
+- support bundle
+- offline diagnostics
+- local role selection
 
 ## Anti-goals
 
 The runtime surface must not hide:
 
-- whether DevBridge is enabled,
-- whether remote access is enabled,
-- whether persistent overlay is active,
-- whether disks are mounted,
-- whether the node is enrolled or anonymous,
-- whether network links are weak or degraded.
+- whether SSH password mode is active
+- whether DevBridge/MCP is enabled
+- whether remote help is enabled
+- whether persistence is active
+- whether internal disks are mounted
+- whether the node is enrolled or anonymous
+- whether network links are degraded

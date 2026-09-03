@@ -2,212 +2,155 @@
 
 ## Build objective
 
-Create a reviewable, reproducible-enough bootable image for the first CyberHIVE Live USB.
-
-The first image only has to prove the runtime surface and safety model. It does not have to provide production inference or a public swarm.
+Create a reviewable, reproducible-enough bootable image for the CyberHIVE Live Appliance while keeping media writes, runtime exposure and promotion as separate evidence gates.
 
 ## Candidate builder
 
-Primary candidate for v0.1:
+Current proven candidate:
 
-- Debian live-build or equivalent live-image tooling
+- Debian 12/bookworm live-build
 
 Later candidate once runtime contents stabilize:
 
-- NixOS ISO for stronger declarative reproducibility
-
-## Image contents v0.1
-
-Required:
-
-- CyberHIVE branded boot splash or role selector placeholder
-- role selector contract
-- local health endpoint or health command
-- hardware inventory command
-- log/evidence directory
-- explicit persistent overlay policy
-- disabled-by-default DevBridge placeholder
-- clear safety banner
-
-Optional:
-
-- local web dashboard mock endpoint
-- cache directory layout
-- network diagnostics
-- QR/local URL for dashboard
+- NixOS ISO may be evaluated for stronger declarative reproducibility
 
 ## Build stages
 
 ### Stage 0 — repository skeleton
 
-Documentation and layout only. No image build required.
-
 Status: completed by `WB-HIVE-BOOT-0001`.
 
 ### Stage 1 — build dry-run
-
-A developer or CI runner can check tracked build inputs and produce a manifest without creating an image.
-
-Command:
-
-```sh
-sh infra/live-usb/debian-live/build-dry-run.sh
-```
-
-Expected output:
-
-```text
-.cyberhive-live-build-dry-run/manifest.json
-```
-
-This stage may determine whether the live-build command is visible on the runner, but it must not call it.
 
 Status: implemented by `WB-HIVE-BOOT-0002`.
 
 ### Stage 2 — real build plan
 
-The real build plan defines the next gate without building an image.
-
-Status: implemented as plan by `WB-HIVE-BOOT-0003`.
-
-Boundary markers:
-
-```text
-ISO build: NOT EXECUTED
-USB write: NOT AUTHORIZED
-runtime verification: NOT CLAIMED
-ADR accepted: NO
-```
+Status: implemented by `WB-HIVE-BOOT-0003`.
 
 ### Stage 3 — real image build gate
 
-A developer or isolated runner can attempt an image build from tracked configuration only after the exact build-only approval token is supplied.
+Status: gate implemented by `WB-HIVE-BOOT-0004`.
 
-Command:
+An explicit image-only build was executed from PR #27 exact head `63c14dba7fd28b8a0d53c23bbda766b06d950260` and preserved as workflow evidence.
 
-```sh
-CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL=BUILD_IMAGE_ONLY_NO_USB \
-sh infra/live-usb/debian-live/build-real-image.sh
-```
+The gate still does not itself grant USB write, boot, deployment or ADR authority.
 
-Expected output directory:
+### Stage 4 — media write evidence
 
-```text
-.cyberhive-live-real-build/
-```
+Status: physically exercised 2026-09-03 outside the PR #27 build-only boundary.
 
-Status: gate implemented by `WB-HIVE-BOOT-0004`; real image build execution remains operator-authorized only and is not run by PR validation.
+Observed evidence:
 
-Boundary markers:
+- source ISO SHA-256 `a93778f299031a0eab340f75e95ed600c5cef315c0678929b36b093ccb023b49`
+- source image size `861929472` bytes
+- removable target positively identified before write
+- `dd` completed successfully
+- byte-for-byte `cmp -n 861929472` returned success
+- media was ejected after verification
 
-```text
-ISO build: NOT RUN BY PR
-USB write: NOT AUTHORIZED
-hardware boot: NOT CLAIMED
-runtime verification: NOT CLAIMED
-ADR accepted: NO
-```
+This observation is evidence of that execution only. Repository automation must not silently generalize it into permission to write future media.
 
-### Stage 4 — CI image build candidate
+### Stage 5 — USB physical boot smoke
 
-CI validates that the tracked configuration can assemble an image or at least a deterministic root filesystem manifest.
+Status: physically exercised 2026-09-03.
 
-This remains future work and must remain separate from the Stage 1 dry-run wrapper, Stage 2 plan and Stage 3 image build gate.
+Observed console evidence showed:
 
-### Stage 5 — USB boot smoke
+- Debian GNU/Linux 12 `cyberhive-live`
+- x86_64 kernel boot
+- CyberHIVE Live USB MOTD
+- automatic `cyberhive` login
+- shell reached successfully
+- network interface acquired IPv4 `192.168.1.122/24` in the photographed session
+- SSH server was absent in the v0.1 image (`ssh.service` / `sshd.service` not found)
 
-Manual evidence proves that the image boots on at least one compatible machine and does not write to internal disks by default.
+The boot proof closes the basic physical-boot question and opens `WB-HIVE-BOOT-0005` for appliance UX and local-control hardening.
 
-This remains future work and must produce hardware evidence, not only CI output.
+### Stage 6 — Live Appliance v0.2
 
-## Artifact names
+Work block: `WB-HIVE-BOOT-0005`.
 
-Proposed pattern:
+Required image behavior:
 
-```text
-cyberhive-live-usb-v<version>-<arch>-<date>.iso
-cyberhive-live-usb-v<version>-<arch>-<date>.manifest.json
-cyberhive-live-usb-v<version>-<arch>-<date>.sha256
-cyberhive-live-usb-v<version>-<arch>-<date>.build-log.txt
-```
+- CyberDJS/CyberHIVE boot branding
+- SSH server included and enabled
+- key-first `CYBERHIVE_CFG` bootstrap with ephemeral password fallback
+- mDNS `cyberhive.local`
+- browser-first local control surface
+- local pairing code
+- dynamic TTY instructions and QR onboarding
+- first-boot role wizard
+- immutable/read-only live-root policy made visible
+- host-disk guard evidence
+- support bundle
+- remote-help disabled by default
+- build/session identity visible to the operator
 
-Stage 1 dry-run does not create these artifacts. Stage 2 planning does not create these artifacts. Stage 3 may create these artifacts only after explicit image-only authorization.
+### Stage 7 — optional desktop/prompt profile
 
-## Dry-run manifest
+A later profile adds a lightweight desktop that opens the same browser control plane locally and adds the prompt/plan/approval/evidence experience. It does not fork the control-plane implementation.
 
-Stage 1 dry-run manifest path:
+## Runtime graphic pipeline
 
-```text
-.cyberhive-live-build-dry-run/manifest.json
-```
-
-Required negative claims:
-
-```json
-{
-  "build_executed": false,
-  "iso_created": false,
-  "usb_written": false,
-  "runtime_verified": false
-}
-```
-
-## Real build manifest
-
-Stage 3 real build manifest path pattern:
+The canonical runtime graphic source is a reviewable SVG under:
 
 ```text
-.cyberhive-live-real-build/<image-name>.manifest.json
+assets/brand/runtime/
 ```
 
-Required negative claims even after a successful image build:
+The image build converts that source to the bootloader's required raster format inside the temporary build workspace. Generated boot raster output is not committed as the source of truth.
 
-```json
-{
-  "usb_written": false,
-  "hardware_booted": false,
-  "runtime_verified": false,
-  "deployment_performed": false,
-  "adr_accepted": false
-}
+For Debian live-build, bootloader customization is staged through `config/bootloaders` in the temporary build tree.
+
+## Configuration media contract
+
+Optional operator configuration is discovered by filesystem label:
+
+```text
+CYBERHIVE_CFG
 ```
 
-## Acceptance evidence
+The Live Appliance mounts this medium read-only and may import:
 
-Minimum evidence bundle for a future real image build:
+```text
+authorized_keys
+```
 
-- build command and environment
-- source commit
-- image hash
-- manifest hash sidecar
-- build log hash
-- package/rootfs manifest when available
-- known limitations
+Private keys, passwords and enrollment secrets must never be baked into the ISO.
 
-Minimum evidence for a future boot smoke test:
+## Acceptance evidence for v0.2
 
-- image hash from the real build manifest
-- boot target hardware summary
-- boot mode: UEFI/BIOS
-- network state
-- health result
-- hardware inventory output
-- internal disk write boundary observation
-- known limitations
+Minimum repository/CI evidence:
 
-Minimum evidence for Stage 1 dry-run:
+- validation of required packages and units
+- shell syntax validation
+- Python syntax validation for local web service
+- validation that root SSH login is disabled
+- validation that key mode disables SSH password authentication
+- validation that config media is mounted read-only
+- validation that host-disk guard contains no disk mutation commands
+- validation that remote help / DevBridge / MCP defaults stay disabled
+- validation that boot graphic source exists and deterministic export tooling is required
 
-- source branch/commit
-- dry-run command
-- generated dry-run manifest
-- CI job result
-- confirmation that no image/media/runtime verification claim was made
+Minimum future physical evidence:
 
-## Non-goals for v0.1
+- branded boot screen
+- `cyberhive.local` resolution from another LAN device
+- browser pairing and health page
+- SSH key-mode acceptance
+- SSH password-fallback acceptance
+- host-disk guard PASS with block/mount evidence
+- support bundle generation
+- restart proves ephemeral credentials/session state rotate
 
-- Secure Boot signing
-- GPU inference
-- mobile worker runtime
+## Non-goals for v0.2
+
+- production inference
 - public federation
 - autonomous updates
+- unattended remote support
 - destructive rescue operations
+- host-disk writes
+- production deployment
+- ADR auto-acceptance
