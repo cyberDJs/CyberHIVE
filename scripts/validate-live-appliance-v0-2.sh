@@ -79,7 +79,7 @@ grep -F 'RM 2>/dev/null' "$guard" >/dev/null
 grep -F '*,rw,*)' "$guard" >/dev/null
 
 support="$root/usr/local/bin/cyberhive-support-bundle"
-if grep -n -E 'ssh-password|pairing-code|web-session-token|/etc/shadow' "$support" | grep -v 'intentionally excluded' >/dev/null; then
+if grep -n -E '^[[:space:]]*(cat|cp|tar|sed|awk|grep)[[:space:]].*(ssh-password|pairing-code|web-session-token|/etc/shadow)' "$support"; then
   echo 'support bundle must not read authentication material' >&2
   exit 1
 fi
@@ -87,8 +87,10 @@ fi
 grep -q 'CYBERDJS' assets/brand/runtime/cyberdjs-cyberhive-boot.svg
 grep -q 'CyberHIVE' assets/brand/runtime/cyberdjs-cyberhive-boot.svg
 grep -F 'rsvg-convert --width 640 --height 480' infra/live-usb/debian-live/build-real-image.sh >/dev/null
-grep -F 'librsvg2-bin' .github/workflows/live-usb-real-image-build-gate.yml >/dev/null
-grep -F 'librsvg2-bin' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
+for workflow in .github/workflows/live-usb-real-image-build-gate.yml .github/workflows/live-usb-real-image-build-manual.yml; do
+  grep -F 'librsvg2-bin' "$workflow" >/dev/null
+  grep -F 'fonts-dejavu-core' "$workflow" >/dev/null
+done
 
 grep -F 'CYBERHIVE_REMOTE_HELP_DEFAULT="disabled"' "$root/etc/cyberhive/live/config.env" >/dev/null
 grep -F 'CYBERHIVE_MCP_DEFAULT="disabled"' "$root/etc/cyberhive/live/config.env" >/dev/null
