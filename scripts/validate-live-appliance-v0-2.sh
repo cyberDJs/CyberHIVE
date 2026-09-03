@@ -51,24 +51,47 @@ grep -qx 'PermitRootLogin no' "$ssh_base"
 grep -qx 'PermitEmptyPasswords no' "$ssh_base"
 if grep -q 'PermitRootLogin yes' "$ssh_base"; then echo 'root SSH login must not be enabled' >&2; exit 1; fi
 
+hook='infra/live-usb/debian-live/config/hooks/live/001-cyberhive-live-skeleton.hook.chroot'
+grep -F 'groupadd --system cyberhive-control' "$hook" >/dev/null
+grep -F 'useradd --system --gid cyberhive-control' "$hook" >/dev/null
+grep -F 'rm -f /etc/ssh/ssh_host_*' "$hook" >/dev/null
+
 bootstrap="$root/usr/local/sbin/cyberhive-onboarding-init"
 grep -F 'blkid -L "$CYBERHIVE_CONFIG_LABEL"' "$bootstrap" >/dev/null
 grep -F 'mount -o ro,nodev,nosuid,noexec' "$bootstrap" >/dev/null
 grep -F 'PasswordAuthentication no' "$bootstrap" >/dev/null
 grep -F 'PasswordAuthentication yes' "$bootstrap" >/dev/null
 grep -F 'ssh-keygen -A' "$bootstrap" >/dev/null
-grep -F 'rm -f /etc/ssh/ssh_host_*' infra/live-usb/debian-live/config/hooks/live/001-cyberhive-live-skeleton.hook.chroot >/dev/null
+grep -F 'chown root:cyberhive "$CYBERHIVE_PRIVATE_DIR"' "$bootstrap" >/dev/null
+grep -F 'chmod 0750 "$CYBERHIVE_PRIVATE_DIR"' "$bootstrap" >/dev/null
+grep -F '"$CYBERHIVE_CONTROL_DIR/pairing-code"' "$bootstrap" >/dev/null
+if grep -F '"$CYBERHIVE_PRIVATE_DIR/pairing-code"' "$bootstrap"; then
+  echo 'pairing code must not share SSH private runtime directory' >&2
+  exit 1
+fi
 
 web="$root/usr/local/bin/cyberhive-web"
+grep -F "PAIR_FILE = CONTROL / 'pairing-code'" "$web" >/dev/null
+grep -F "mode_file = STATE / 'ssh-mode'" "$web" >/dev/null
 grep -F 'hmac.compare_digest' "$web" >/dev/null
 grep -F 'TOO_MANY_REQUESTS' "$web" >/dev/null
 grep -F 'HttpOnly; SameSite=Strict' "$web" >/dev/null
 grep -F "remote_help': 'disabled" "$web" >/dev/null
+if grep -F '/run/cyberhive/private' "$web"; then
+  echo 'LAN-facing web process must not read CyberHIVE SSH private runtime state' >&2
+  exit 1
+fi
 
 web_unit="$root/etc/systemd/system/cyberhive-web.service"
-grep -qx 'User=cyberhive' "$web_unit"
+grep -qx 'User=cyberhive-web' "$web_unit"
+grep -qx 'Group=cyberhive-control' "$web_unit"
 grep -qx 'NoNewPrivileges=true' "$web_unit"
+grep -qx 'ProtectHome=true' "$web_unit"
 grep -qx 'CapabilityBoundingSet=CAP_NET_BIND_SERVICE' "$web_unit"
+if grep -qx 'User=cyberhive' "$web_unit"; then
+  echo 'browser control plane must not run as SSH/login user' >&2
+  exit 1
+fi
 
 guard="$root/usr/local/bin/cyberhive-host-disk-guard"
 if grep -n -E '(^|[[:space:]])(dd|mkfs|wipefs|parted|fdisk)([[:space:]]|$)' "$guard"; then
@@ -92,6 +115,8 @@ for workflow in .github/workflows/live-usb-real-image-build-gate.yml .github/wor
   grep -F 'fonts-dejavu-core' "$workflow" >/dev/null
 done
 
+grep -F 'CYBERHIVE_WEB_USER="cyberhive-web"' "$root/etc/cyberhive/live/config.env" >/dev/null
+grep -F 'CYBERHIVE_CONTROL_GROUP="cyberhive-control"' "$root/etc/cyberhive/live/config.env" >/dev/null
 grep -F 'CYBERHIVE_REMOTE_HELP_DEFAULT="disabled"' "$root/etc/cyberhive/live/config.env" >/dev/null
 grep -F 'CYBERHIVE_MCP_DEFAULT="disabled"' "$root/etc/cyberhive/live/config.env" >/dev/null
 grep -F 'CYBERHIVE_DEVBRIDGE_DEFAULT="disabled"' "$root/etc/cyberhive/live/config.env" >/dev/null
