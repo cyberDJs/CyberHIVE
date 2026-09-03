@@ -90,6 +90,20 @@ A separate authorized Mac on the same LAN independently verified the repaired ru
 
 This independently confirms that the `/run/sshd` bootstrap repair restores reachable SSH and browser services and that mDNS discovery works on the tested LAN.
 
+## Interactive SSH login verification
+
+Third operator-supplied screenshot:
+
+- file: `Screenshot 2026-09-04 at 0.01.32.png`
+- bytes: `1371944`
+- SHA-256: `ae487a0cf21352fdf7bfb55e050c854a5850eaff945ca1087b10f28452099c69`
+
+The screenshot shows an interactive SSH connection from another LAN machine to `cyberhive@192.168.1.122`, successful password authentication, a CyberHIVE shell prompt, and the remote CyberHIVE welcome surface. The server fingerprint displayed during connection is the same ED25519 fingerprint independently verified above.
+
+The remote welcome correctly reports SSH auth mode `ephemeral-password`, host guard `pass`, and DevBridge/MCP/Remote Help `disabled`. It also prints `Pair/password hidden on remote terminals`, confirming that the local-console-only secret-display boundary is enforced for the remote session.
+
+No SSH password or pairing code is persisted in this evidence record.
+
 ## Remaining verification boundary
 
 The ephemeral hotfix proves the runtime repair path but does not prove that the repaired code is correctly embedded into a newly built image. The boot splash fix cannot be verified in the already-booted old image.
@@ -108,6 +122,10 @@ Therefore a new exact-head image build, USB rewrite and physical boot are still 
 `RUNTIME_HOTFIX = PASS`
 
 `LAN_HTTP_MDNS_SSH_REACHABILITY = PASS`
+
+`SSH_INTERACTIVE_LOGIN = PASS`
+
+`REMOTE_SECRET_DISPLAY_BOUNDARY = PASS`
 
 `REPAIRED_IMAGE_ACCEPTANCE = PENDING_REBUILD`
 
