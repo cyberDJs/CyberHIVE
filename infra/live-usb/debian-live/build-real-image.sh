@@ -144,7 +144,11 @@ fi
 prepare_boot_branding() {
   prepared=0
   mkdir -p "$build_dir/config/bootloaders"
-  for bootloader in isolinux grub-efi; do
+
+  # live-build 1:20230502 uses config/bootloaders/grub-pc as the shared
+  # configuration source for both grub-pc and grub-efi. Targeting a
+  # non-existent grub-efi theme directory leaves UEFI boots unbranded.
+  for bootloader in isolinux syslinux_common grub-pc; do
     default_theme="/usr/share/live/build/bootloaders/$bootloader"
     custom_theme="$build_dir/config/bootloaders/$bootloader"
     if [ -d "$default_theme" ]; then
@@ -155,8 +159,10 @@ prepare_boot_branding() {
       prepared=$((prepared + 1))
     fi
   done
+
+  [ -f "$build_dir/config/bootloaders/grub-pc/splash.png" ] || return 1
   [ "$prepared" -gt 0 ] || return 1
-  printf 'prepared CyberHIVE boot branding for %s bootloader theme(s)\n' "$prepared" >>"$build_log_path"
+  printf 'prepared CyberHIVE boot branding for %s bootloader theme(s), including grub-pc shared EFI source\n' "$prepared" >>"$build_log_path"
 }
 
 if ! prepare_boot_branding; then
@@ -171,6 +177,25 @@ build_status='ok'
   sh auto/config
   lb build
 ) >>"$build_log_path" 2>&1 || build_status='failed'
+
+# Verify the rendered brand actually reached the GRUB tree used by EFI boot.
+if [ "$build_status" = 'ok' ]; then
+  expected_grub_splash="$build_dir/config/bootloaders/grub-pc/splash.png"
+  built_grub_splash="$build_dir/binary/boot/grub/splash.png"
+  if [ ! -f "$built_grub_splash" ]; then
+    echo 'CyberHIVE EFI branding verification failed: binary/boot/grub/splash.png missing' >>"$build_log_path"
+    build_status='failed'
+  else
+    expected_grub_sha=$(sha256_file "$expected_grub_splash")
+    built_grub_sha=$(sha256_file "$built_grub_splash")
+    if [ "$expected_grub_sha" != "$built_grub_sha" ]; then
+      echo 'CyberHIVE EFI branding verification failed: GRUB splash hash mismatch' >>"$build_log_path"
+      build_status='failed'
+    else
+      printf 'CyberHIVE EFI branding verified: %s\n' "$built_grub_sha" >>"$build_log_path"
+    fi
+  fi
+fi
 
 built_iso=''
 for candidate in "$build_dir"/live-image-*.iso "$build_dir"/*.iso; do
