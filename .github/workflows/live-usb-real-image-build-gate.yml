@@ -60,7 +60,6 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     env:
-      CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL: BUILD_IMAGE_ONLY_NO_USB
       CYBERHIVE_REAL_IMAGE_BUILDER_LABEL: github-pr-${{ github.event.pull_request.number }}-run-${{ github.run_id }}
       CYBERHIVE_APPROVED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
@@ -80,6 +79,8 @@ jobs:
         shell: sh
         run: sh scripts/validate-live-usb-real-image-build-gate.sh
       - name: Run approved image-only build
+        env:
+          CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL: BUILD_IMAGE_ONLY_NO_USB
         shell: sh
         run: |
           docker run --rm \
