@@ -2,7 +2,10 @@
 set -eu
 
 # CyberHIVE Live Appliance v0.2 build configuration.
-lb config \
+# `noauto` is required when auto/config invokes lb config directly; without it
+# live-build re-enters auto/config recursively until its argument vector grows
+# beyond the platform limit.
+lb config noauto \
   --distribution bookworm \
   --archive-areas "main contrib non-free-firmware" \
   --binary-images iso-hybrid \
