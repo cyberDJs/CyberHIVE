@@ -2,6 +2,11 @@ name: Live USB real image build gate
 
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
     paths:
       - 'infra/live-usb/**'
       - 'docs/work-blocks/WB-HIVE-BOOT-0004-real-image-build-gate.md'
@@ -31,6 +36,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: cyberhive-real-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   real-image-build-gate:
     runs-on: ubuntu-latest
@@ -42,3 +51,56 @@ jobs:
       - name: Validate real image build gate scope
         shell: sh
         run: sh scripts/validate-live-usb-real-image-build-gate.sh
+
+  approved-real-image-build:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'approved:image-build-only' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL: BUILD_IMAGE_ONLY_NO_USB
+      CYBERHIVE_REAL_IMAGE_BUILDER_LABEL: github-pr-${{ github.event.pull_request.number }}-run-${{ github.run_id }}
+      CYBERHIVE_APPROVED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout approved PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CYBERHIVE_APPROVED_HEAD_SHA }}
+          persist-credentials: false
+      - name: Verify exact approved head
+        shell: sh
+        run: |
+          actual_head=$(git rev-parse HEAD)
+          test "$actual_head" = "$CYBERHIVE_APPROVED_HEAD_SHA"
+          test -z "$(git status --porcelain)"
+          printf 'approved_head=%s\n' "$actual_head"
+      - name: Validate gate before build
+        shell: sh
+        run: sh scripts/validate-live-usb-real-image-build-gate.sh
+      - name: Run approved image-only build
+        shell: sh
+        run: |
+          docker run --rm \
+            --cap-add SYS_ADMIN \
+            --security-opt apparmor=unconfined \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            --env CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL \
+            --env CYBERHIVE_REAL_IMAGE_BUILDER_LABEL \
+            debian:bookworm-slim \
+            sh -c 'apt-get update && apt-get install -y --no-install-recommends live-build ca-certificates git rsync xorriso isolinux syslinux-common squashfs-tools && git config --global --add safe.directory /workspace && sh infra/live-usb/debian-live/build-real-image.sh'
+      - name: Upload exact-head build evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyberhive-real-build-pr${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}-run${{ github.run_id }}
+          path: |
+            .cyberhive-live-real-build/*.iso
+            .cyberhive-live-real-build/*.sha256
+            .cyberhive-live-real-build/*.manifest.json
+            .cyberhive-live-real-build/*.build-log.txt
+            .cyberhive-live-real-build/*.packages.txt
+          if-no-files-found: warn
+          retention-days: 30

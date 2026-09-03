@@ -150,6 +150,22 @@ if grep -n '^  push:' .github/workflows/live-usb-real-image-build-manual.yml; th
   exit 1
 fi
 
+gate_workflow='.github/workflows/live-usb-real-image-build-gate.yml'
+grep -n '^      - labeled$' "$gate_workflow" >/dev/null
+grep -n "github.event.action == 'labeled'" "$gate_workflow" >/dev/null
+grep -n "github.event.label.name == 'approved:image-build-only'" "$gate_workflow" >/dev/null
+grep -n 'github.event.pull_request.head.repo.full_name == github.repository' "$gate_workflow" >/dev/null
+grep -n 'CYBERHIVE_APPROVED_HEAD_SHA: \${{ github.event.pull_request.head.sha }}' "$gate_workflow" >/dev/null
+grep -n 'ref: \${{ env.CYBERHIVE_APPROVED_HEAD_SHA }}' "$gate_workflow" >/dev/null
+grep -n 'test "$actual_head" = "$CYBERHIVE_APPROVED_HEAD_SHA"' "$gate_workflow" >/dev/null
+grep -n 'CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL: BUILD_IMAGE_ONLY_NO_USB' "$gate_workflow" >/dev/null
+grep -n 'persist-credentials: false' "$gate_workflow" >/dev/null
+grep -n 'retention-days: 30' "$gate_workflow" >/dev/null
+if grep -n "github.event.action == 'synchronize'.*approved:image-build-only" "$gate_workflow"; then
+  echo 'a synchronize event must not reuse a previous image-build approval label' >&2
+  exit 1
+fi
+
 grep -n '^Proposed$' docs/adr/ADR-0008-live-usb-real-image-build-gate.md >/dev/null
 grep -n 'File existence is not acceptance' docs/adr/ADR-0008-live-usb-real-image-build-gate.md >/dev/null
 grep -n 'ISO build: NOT RUN BY PR' docs/work-blocks/WB-HIVE-BOOT-0004-real-image-build-gate.md >/dev/null

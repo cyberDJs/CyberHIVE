@@ -48,6 +48,12 @@ CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL=BUILD_IMAGE_ONLY_NO_USB
 
 The token is intentionally not a secret. It is a friction and audit marker proving that the operator requested image build only.
 
+For the pre-merge GitHub path, applying the `approved:image-build-only` label is the
+operator approval event. Only the `labeled` event may start that job. The job is limited
+to same-repository pull requests, checks out the exact head SHA carried by the event,
+uses read-only repository permissions and passes no repository secrets into the builder.
+A subsequent `synchronize` event does not inherit authority from the existing label.
+
 ## Builder label safety
 
 `CYBERHIVE_REAL_IMAGE_BUILDER_LABEL` must be non-secret evidence metadata.

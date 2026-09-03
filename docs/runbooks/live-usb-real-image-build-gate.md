@@ -49,6 +49,26 @@ The wrapper must refuse unsafe labels before creating build output.
 
 ## Command
 
+### GitHub PR exact-head path
+
+For an unmerged same-repository pull request, apply this label:
+
+```text
+approved:image-build-only
+```
+
+Applying the label is the explicit build-only approval event. The workflow checks out
+`github.event.pull_request.head.sha`, verifies the checkout matches that SHA, runs the
+build in the bounded Debian container and uploads a PR/SHA/run-named evidence artifact.
+
+Remove and re-apply the label for each newly approved attempt. A later push does not
+reuse the previous label event as build authority.
+
+Fork pull requests are refused by this path. The workflow token remains read-only and
+no repository secret is passed to the build container.
+
+### Local builder path
+
 From repository root:
 
 ```sh

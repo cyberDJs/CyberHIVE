@@ -48,6 +48,11 @@ BUILD_IMAGE_ONLY_NO_USB
 
 The build gate may create an ISO/image candidate and local evidence files. It must not write removable media and must not claim boot/runtime verification.
 
+For an unmerged same-repository PR, the `approved:image-build-only` label is the
+auditable approval event. It binds execution to the PR head SHA present in that label
+event. A later push requires a fresh remove/re-apply cycle and therefore a fresh
+approval event.
+
 ## Expected artifact directory
 
 ```text
@@ -97,6 +102,9 @@ ADR accepted: NO
 - Build script contains no USB/media write command.
 - Manifest contract from `WB-HIVE-BOOT-0003` is reused.
 - CI validation does not run a real image build.
+- Ordinary PR validation and synchronize events do not run a real image build.
+- Only a same-repository `approved:image-build-only` label event may run the pre-merge build.
+- The approved build checks out and verifies the exact PR head SHA from the label event.
 - ADR-0008 remains proposed only.
 
 ## Stop line
