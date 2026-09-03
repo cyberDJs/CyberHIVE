@@ -14,8 +14,8 @@ else
   ssh_target="ssh cyberhive@$ip4"
 fi
 
-auth_mode=$(cat "$CYBERHIVE_PRIVATE_DIR/ssh-mode" 2>/dev/null || printf '%s' 'initializing')
-pairing_code=$(cat "$CYBERHIVE_PRIVATE_DIR/pairing-code" 2>/dev/null || printf '%s' 'initializing')
+auth_mode=$(cat "$CYBERHIVE_STATE_DIR/ssh-mode" 2>/dev/null || printf '%s' 'initializing')
+pairing_code=$(cat "$CYBERHIVE_CONTROL_DIR/pairing-code" 2>/dev/null || printf '%s' 'initializing')
 ssh_password=$(cat "$CYBERHIVE_PRIVATE_DIR/ssh-password" 2>/dev/null || true)
 fingerprint=$(cat "$CYBERHIVE_STATE_DIR/ssh-host-fingerprint" 2>/dev/null || printf '%s' 'initializing')
 config_state=$(cat "$CYBERHIVE_STATE_DIR/config-media-state" 2>/dev/null || printf '%s' 'unknown')
