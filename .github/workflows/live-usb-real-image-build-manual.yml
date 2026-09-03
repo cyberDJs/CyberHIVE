@@ -1,0 +1,72 @@
+name: Live USB real image build manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      approval_token:
+        description: 'Must equal BUILD_IMAGE_ONLY_NO_USB'
+        required: true
+        type: string
+      builder_label:
+        description: 'Non-secret label, 1-80 chars: A-Z a-z 0-9 . _ : @ -'
+        required: true
+        type: string
+      run_build:
+        description: 'Set to true to run the image build wrapper'
+        required: true
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+permissions:
+  contents: read
+
+env:
+  CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL: ${{ github.event.inputs.approval_token }}
+  CYBERHIVE_REAL_IMAGE_BUILDER_LABEL: ${{ github.event.inputs.builder_label }}
+
+jobs:
+  real-image-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate gate before build
+        shell: sh
+        run: sh scripts/validate-live-usb-real-image-build-gate.sh
+      - name: Stop when run_build is false
+        if: ${{ github.event.inputs.run_build != 'true' }}
+        shell: sh
+        run: |
+          echo 'Manual workflow preflight only. Real image build wrapper was not run.'
+          echo 'ISO build: NOT EXECUTED'
+          echo 'USB write: NOT AUTHORIZED'
+          echo 'runtime verification: NOT CLAIMED'
+      - name: Run real image build wrapper
+        if: ${{ github.event.inputs.run_build == 'true' }}
+        shell: sh
+        run: |
+          docker run --rm \
+            --cap-add SYS_ADMIN \
+            --security-opt apparmor=unconfined \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            --env CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL \
+            --env CYBERHIVE_REAL_IMAGE_BUILDER_LABEL \
+            debian:bookworm-slim \
+            sh -c 'apt-get update && apt-get install -y --no-install-recommends live-build ca-certificates rsync xorriso isolinux syslinux-common squashfs-tools && sh infra/live-usb/debian-live/build-real-image.sh'
+      - name: Upload build evidence
+        if: ${{ always() && github.event.inputs.run_build == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyberhive-live-real-build-evidence
+          path: |
+            .cyberhive-live-real-build/*.iso
+            .cyberhive-live-real-build/*.sha256
+            .cyberhive-live-real-build/*.manifest.json
+            .cyberhive-live-real-build/*.build-log.txt
+            .cyberhive-live-real-build/*.packages.txt
+          if-no-files-found: warn
