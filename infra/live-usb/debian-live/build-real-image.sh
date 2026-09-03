@@ -142,7 +142,7 @@ fi
 build_status='ok'
 (
   cd "$build_dir"
-  lb config
+  sh auto/config
   lb build
 ) >>"$build_log_path" 2>&1 || build_status='failed'
 

@@ -18,6 +18,11 @@ Required:
 - no project secrets in the builder environment,
 - explicit operator approval for image build only.
 
+The GitHub-hosted manual workflow provisions these prerequisites inside an
+ephemeral Debian Bookworm container with only the mount capability required by
+live-build. The container mounts only the checked-out repository workspace and
+is discarded after the build. Artifact upload excludes the temporary rootfs.
+
 Approval token:
 
 ```text

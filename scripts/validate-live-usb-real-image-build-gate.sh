@@ -57,6 +57,11 @@ grep -n 'BUILD_IMAGE_ONLY_NO_USB' infra/live-usb/debian-live/build-real-image.sh
 grep -n 'refusing real image build' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n 'refusing real image build: no SHA-256 tool available' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n 'invalid builder label' infra/live-usb/debian-live/build-real-image.sh >/dev/null
+grep -n 'sh auto/config' infra/live-usb/debian-live/build-real-image.sh >/dev/null
+if grep -n '^[[:space:]]*lb config[[:space:]]*$' infra/live-usb/debian-live/build-real-image.sh; then
+  echo 'real image wrapper must use the tracked auto/config instead of unconfigured lb defaults' >&2
+  exit 1
+fi
 grep -n 'out_dir="$repo_root/.cyberhive-live-real-build"' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n '"output_directory": ".cyberhive-live-real-build/"' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n '"usb_written": false' infra/live-usb/debian-live/build-real-image.sh >/dev/null
@@ -125,6 +130,17 @@ fi
 
 grep -n '^on:$' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
 grep -n '^  workflow_dispatch:$' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
+grep -n 'debian:bookworm-slim' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
+grep -n -- '--cap-add SYS_ADMIN' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
+if grep -n -- '--privileged' .github/workflows/live-usb-real-image-build-manual.yml; then
+  echo 'manual real image workflow must not grant full container privileges' >&2
+  exit 1
+fi
+grep -n '\.cyberhive-live-real-build/\*\.iso' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
+if grep -n 'path: \.cyberhive-live-real-build/$' .github/workflows/live-usb-real-image-build-manual.yml; then
+  echo 'manual workflow must not upload the build work directory' >&2
+  exit 1
+fi
 if grep -n '^  pull_request:' .github/workflows/live-usb-real-image-build-manual.yml; then
   echo 'manual real image build workflow must not run on pull_request' >&2
   exit 1

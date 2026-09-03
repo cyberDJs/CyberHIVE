@@ -48,11 +48,25 @@ jobs:
       - name: Run real image build wrapper
         if: ${{ github.event.inputs.run_build == 'true' }}
         shell: sh
-        run: sh infra/live-usb/debian-live/build-real-image.sh
+        run: |
+          docker run --rm \
+            --cap-add SYS_ADMIN \
+            --security-opt apparmor=unconfined \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            --env CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL \
+            --env CYBERHIVE_REAL_IMAGE_BUILDER_LABEL \
+            debian:bookworm-slim \
+            sh -c 'apt-get update && apt-get install -y --no-install-recommends live-build ca-certificates rsync xorriso isolinux syslinux-common squashfs-tools && sh infra/live-usb/debian-live/build-real-image.sh'
       - name: Upload build evidence
         if: ${{ always() && github.event.inputs.run_build == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: cyberhive-live-real-build-evidence
-          path: .cyberhive-live-real-build/
+          path: |
+            .cyberhive-live-real-build/*.iso
+            .cyberhive-live-real-build/*.sha256
+            .cyberhive-live-real-build/*.manifest.json
+            .cyberhive-live-real-build/*.build-log.txt
+            .cyberhive-live-real-build/*.packages.txt
           if-no-files-found: warn
