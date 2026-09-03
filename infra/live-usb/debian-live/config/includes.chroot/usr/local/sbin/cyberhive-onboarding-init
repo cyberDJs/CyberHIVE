@@ -105,23 +105,41 @@ printf '%s\n' "$config_state" >"$CYBERHIVE_STATE_DIR/config-media-state"
 chown cyberhive:"$CYBERHIVE_CONTROL_GROUP" "$CYBERHIVE_STATE_DIR/ssh-mode" "$CYBERHIVE_STATE_DIR/config-media-state"
 chmod 0640 "$CYBERHIVE_STATE_DIR/ssh-mode" "$CYBERHIVE_STATE_DIR/config-media-state"
 
+# ssh.service normally creates /run/sshd through RuntimeDirectory=sshd, but
+# this bootstrap validates the daemon configuration before ssh.service starts.
+# Create the ephemeral privilege-separation directory explicitly so `sshd -t`
+# is valid during early live boot as well.
+install -d -m 0755 -o root -g root /run/sshd
+
 # Host keys are generated into the ephemeral live overlay at each boot. The
 # build hook removes build-time host keys so copies of the ISO never share one.
 ssh-keygen -A >/dev/null
-/usr/sbin/sshd -t
-
 host_fingerprint=$(ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256 2>/dev/null | awk '{print $2}' || true)
 printf '%s\n' "$host_fingerprint" >"$CYBERHIVE_STATE_DIR/ssh-host-fingerprint"
 chown cyberhive:"$CYBERHIVE_CONTROL_GROUP" "$CYBERHIVE_STATE_DIR/ssh-host-fingerprint"
 chmod 0640 "$CYBERHIVE_STATE_DIR/ssh-host-fingerprint"
+
+ssh_bootstrap_status='ready'
+if ! /usr/sbin/sshd -t; then
+  ssh_bootstrap_status='config-invalid'
+fi
+printf '%s\n' "$ssh_bootstrap_status" >"$CYBERHIVE_STATE_DIR/ssh-bootstrap-status"
+chown cyberhive:"$CYBERHIVE_CONTROL_GROUP" "$CYBERHIVE_STATE_DIR/ssh-bootstrap-status"
+chmod 0640 "$CYBERHIVE_STATE_DIR/ssh-bootstrap-status"
 
 jq -n \
   --arg session_id "$session_id" \
   --arg ssh_auth_mode "$auth_mode" \
   --arg config_media "$config_state" \
   --arg ssh_host_fingerprint "$host_fingerprint" \
-  '{schema:"cyberhive.live.onboarding.v1",session_id:$session_id,ssh_auth_mode:$ssh_auth_mode,config_media:$config_media,ssh_host_fingerprint:$ssh_host_fingerprint}' \
+  --arg ssh_bootstrap_status "$ssh_bootstrap_status" \
+  '{schema:"cyberhive.live.onboarding.v1",session_id:$session_id,ssh_auth_mode:$ssh_auth_mode,config_media:$config_media,ssh_host_fingerprint:$ssh_host_fingerprint,ssh_bootstrap_status:$ssh_bootstrap_status}' \
   >"$CYBERHIVE_EVIDENCE_DIR/onboarding.json"
 
 chown cyberhive:"$CYBERHIVE_CONTROL_GROUP" "$CYBERHIVE_EVIDENCE_DIR/onboarding.json"
 chmod 0640 "$CYBERHIVE_EVIDENCE_DIR/onboarding.json"
+
+if [ "$ssh_bootstrap_status" != 'ready' ]; then
+  echo 'cyberhive-onboarding-init: sshd configuration validation failed' >&2
+  exit 3
+fi
