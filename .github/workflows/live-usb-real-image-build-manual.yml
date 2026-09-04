@@ -61,7 +61,20 @@ jobs:
             --env CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL \
             --env CYBERHIVE_REAL_IMAGE_BUILDER_LABEL \
             debian:bookworm-slim \
-            sh -c 'apt-get update && apt-get install -y --no-install-recommends live-build ca-certificates git rsync xorriso isolinux syslinux-common squashfs-tools librsvg2-bin fonts-dejavu-core gdisk grub-efi-amd64-bin dosfstools mtools e2fsprogs gzip && git config --global --add safe.directory /workspace && sh infra/live-usb/debian-live/build-real-image.sh && sh infra/live-usb/debian-live/build-unattended-disk-image.sh'
+            sh -c 'apt-get update && apt-get install -y --no-install-recommends live-build ca-certificates git rsync xorriso isolinux syslinux-common squashfs-tools librsvg2-bin fonts-dejavu-core gdisk grub-efi-amd64-bin dosfstools mtools e2fsprogs gzip && git config --global --add safe.directory /workspace && sh infra/live-usb/debian-live/build-real-image.sh && mkdir -p .cyberhive-live-real-build && { df -h /workspace; du -sh .cyberhive-live-real-build/*.work 2>/dev/null || true; } > .cyberhive-live-real-build/pre-unattended-disk-usage.txt && find .cyberhive-live-real-build -maxdepth 1 -type d -name "cyberhive-live-usb-*.work" -exec rm -rf {} + && df -h /workspace > .cyberhive-live-real-build/post-cleanup-disk-usage.txt && sh -x infra/live-usb/debian-live/build-unattended-disk-image.sh > .cyberhive-live-real-build/unattended-console.txt 2>&1'
+      - name: Upload lightweight build diagnostics
+        if: ${{ always() && github.event.inputs.run_build == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyberhive-live-real-build-diagnostics
+          path: |
+            .cyberhive-live-real-build/*.build-log.txt
+            .cyberhive-live-real-build/*.manifest.json
+            .cyberhive-live-real-build/*.sha256
+            .cyberhive-live-real-build/*.packages.txt
+            .cyberhive-live-real-build/*disk-usage.txt
+            .cyberhive-live-real-build/unattended-console.txt
+          if-no-files-found: warn
       - name: Upload build evidence
         if: ${{ always() && github.event.inputs.run_build == 'true' }}
         uses: actions/upload-artifact@v4
@@ -75,4 +88,6 @@ jobs:
             .cyberhive-live-real-build/*.manifest.json
             .cyberhive-live-real-build/*.build-log.txt
             .cyberhive-live-real-build/*.packages.txt
+            .cyberhive-live-real-build/*disk-usage.txt
+            .cyberhive-live-real-build/unattended-console.txt
           if-no-files-found: warn

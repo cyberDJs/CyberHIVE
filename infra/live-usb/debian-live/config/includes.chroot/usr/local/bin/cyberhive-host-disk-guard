@@ -7,8 +7,36 @@ mkdir -p "$CYBERHIVE_EVIDENCE_DIR"
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT HUP INT TERM
 
-lsblk -dnpo NAME,TYPE,RM 2>/dev/null | awk '$2 == "disk" && $3 == "0" {print $1}' | while IFS= read -r disk; do
+allowed_parent=''
+current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
+case "$current" in
+  A) current_label="$CYBERHIVE_SLOT_A_LABEL" ;;
+  B) current_label="$CYBERHIVE_SLOT_B_LABEL" ;;
+  *) current_label='' ;;
+esac
+state_dev=$(blkid -L "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
+efi_dev=$(blkid -L "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
+current_dev=''
+[ -z "$current_label" ] || current_dev=$(blkid -L "$current_label" 2>/dev/null || true)
+if [ -n "$state_dev" ] && [ -n "$efi_dev" ] && [ -n "$current_dev" ]; then
+  state_pk=$(lsblk -ndo PKNAME "$state_dev" 2>/dev/null | head -n 1 || true)
+  efi_pk=$(lsblk -ndo PKNAME "$efi_dev" 2>/dev/null | head -n 1 || true)
+  current_pk=$(lsblk -ndo PKNAME "$current_dev" 2>/dev/null | head -n 1 || true)
+  if [ -n "$state_pk" ] && [ "$state_pk" = "$efi_pk" ] && [ "$state_pk" = "$current_pk" ]; then
+    candidate="/dev/$state_pk"
+    if [ "$(lsblk -ndo TRAN "$candidate" 2>/dev/null | head -n 1 || true)" = 'usb' ]; then
+      allowed_parent="$candidate"
+    fi
+  fi
+fi
+
+# The fully validated CyberHIVE USB parent is allowed even when its kernel RM bit is 0.
+# Every other physical disk remains subject to the no-writable-host-disk boundary.
+lsblk -dnpo NAME,TYPE 2>/dev/null | awk '$2 == "disk" {print $1}' | while IFS= read -r disk; do
   [ -n "$disk" ] || continue
+  if [ -n "$allowed_parent" ] && [ "$disk" = "$allowed_parent" ]; then
+    continue
+  fi
   lsblk -nrpo NAME,MOUNTPOINT "$disk" 2>/dev/null | while IFS= read -r line; do
     dev=${line%% *}
     mountpoint=${line#* }
@@ -34,7 +62,8 @@ fi
 jq -n \
   --arg status "$status" \
   --arg violations "$violations" \
-  '{schema:"cyberhive.live.host_disk_guard.v1",status:$status,policy:"no writable mounts backed by non-removable physical disks",violations:$violations}' \
+  --arg allowed_parent "$allowed_parent" \
+  '{schema:"cyberhive.live.host_disk_guard.v2",status:$status,policy:"no writable mounts backed by physical disks other than the fully validated CyberHIVE USB parent",allowed_usb_parent:$allowed_parent,violations:$violations}' \
   >"$CYBERHIVE_EVIDENCE_DIR/host-disk-guard.json"
 
 cat "$CYBERHIVE_EVIDENCE_DIR/host-disk-guard.json"

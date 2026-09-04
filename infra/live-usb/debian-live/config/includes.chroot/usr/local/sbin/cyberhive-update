@@ -18,6 +18,46 @@ persist="$CYBERHIVE_PERSIST_ROOT"
 mountpoint -q "$persist" || systemctl start cyberhive-persist-init.service
 mountpoint -q "$persist" || { echo 'persistence unavailable' >&2; exit 3; }
 
+mkdir -p /run/cyberhive
+lock_dir=/run/cyberhive/ota.lock
+if ! mkdir "$lock_dir" 2>/dev/null; then
+  echo 'another CyberHIVE OTA operation is active' >&2
+  exit 6
+fi
+
+work="$persist/cache/ota.$$"
+slot_mount=/run/cyberhive/slot-target
+slot_mounted='false'
+efi_mount=/run/cyberhive/efi-update
+efi_mounted='false'
+cleanup() {
+  if [ "$slot_mounted" = 'true' ]; then umount "$slot_mount" 2>/dev/null || true; fi
+  if [ "$efi_mounted" = 'true' ]; then umount "$efi_mount" 2>/dev/null || true; fi
+  rm -rf "$work" "$lock_dir"
+}
+trap cleanup EXIT HUP INT TERM
+
+atomic_text() {
+  value=$1
+  target=$2
+  tmp="$target.tmp.$$"
+  printf '%s\n' "$value" >"$tmp"
+  chmod 0600 "$tmp"
+  mv "$tmp" "$target"
+}
+
+atomic_copy() {
+  source=$1
+  target=$2
+  tmp="$target.tmp.$$"
+  install -m 0600 "$source" "$tmp"
+  mv "$tmp" "$target"
+}
+
+parent_name() {
+  lsblk -ndo PKNAME "$1" 2>/dev/null | head -n 1
+}
+
 current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
 case "$current" in
   A) inactive=B; inactive_label="$CYBERHIVE_SLOT_B_LABEL" ;;
@@ -28,18 +68,32 @@ esac
 state_dev=$(blkid -L "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
 efi_dev=$(blkid -L "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
 target_dev=$(blkid -L "$inactive_label" 2>/dev/null || true)
-[ -n "$state_dev" ] && [ -n "$efi_dev" ] && [ -n "$target_dev" ] || { echo 'CyberHIVE STATE/EFI/inactive-slot labels not found' >&2; exit 3; }
-state_pk=$(lsblk -ndo PKNAME "$state_dev" | head -n 1)
-efi_pk=$(lsblk -ndo PKNAME "$efi_dev" | head -n 1)
-target_pk=$(lsblk -ndo PKNAME "$target_dev" | head -n 1)
-[ -n "$state_pk" ] && [ "$state_pk" = "$efi_pk" ] && [ "$state_pk" = "$target_pk" ] || { echo 'STATE/EFI/slot parent mismatch' >&2; exit 3; }
+current_dev=$(blkid -L "$( [ "$current" = A ] && printf '%s' "$CYBERHIVE_SLOT_A_LABEL" || printf '%s' "$CYBERHIVE_SLOT_B_LABEL" )" 2>/dev/null || true)
+[ -n "$state_dev" ] && [ -n "$efi_dev" ] && [ -n "$target_dev" ] && [ -n "$current_dev" ] || {
+  echo 'CyberHIVE STATE/EFI/A/B labels not found' >&2
+  exit 3
+}
+state_pk=$(parent_name "$state_dev")
+efi_pk=$(parent_name "$efi_dev")
+target_pk=$(parent_name "$target_dev")
+current_pk=$(parent_name "$current_dev")
+[ -n "$state_pk" ] && [ "$state_pk" = "$efi_pk" ] && [ "$state_pk" = "$target_pk" ] && [ "$state_pk" = "$current_pk" ] || {
+  echo 'STATE/EFI/A/B parent mismatch' >&2
+  exit 3
+}
 parent="/dev/$state_pk"
-[ "$(lsblk -ndo TRAN "$parent" | head -n 1)" = 'usb' ] || { echo 'refusing OTA on non-USB parent' >&2; exit 3; }
+[ "$(lsblk -ndo TRAN "$parent" 2>/dev/null | head -n 1)" = 'usb' ] || {
+  echo 'refusing OTA on non-USB parent' >&2
+  exit 3
+}
+mounted_state=$(findmnt -nr -o SOURCE --target "$persist" 2>/dev/null || true)
+[ -n "$mounted_state" ] \
+  && [ "$(readlink -f "$mounted_state" 2>/dev/null || printf '%s' "$mounted_state")" = "$(readlink -f "$state_dev" 2>/dev/null || printf '%s' "$state_dev")" ] || {
+  echo 'mounted STATE identity mismatch' >&2
+  exit 3
+}
 
-work="$persist/cache/ota.$$"
-rm -rf "$work"
-mkdir -p "$work"
-trap 'rm -rf "$work"' EXIT HUP INT TERM
+mkdir -p "$work" "$persist/state/ota"
 manifest="$work/channel.json"
 sig="$work/channel.json.sig"
 bundle="$work/slot.tar"
@@ -68,13 +122,25 @@ case "$sequence" in *[!0-9]*|'') echo 'invalid release sequence' >&2; exit 4 ;; 
 [ "$sequence" -gt 0 ] || { echo 'release sequence must be positive' >&2; exit 4; }
 
 current_sequence=$(cat "$persist/state/ota/current-sequence" 2>/dev/null || printf '0')
+failed_sequence=$(cat "$persist/state/ota/failed-sequence" 2>/dev/null || printf '0')
 case "$current_sequence" in *[!0-9]*|'') current_sequence=0 ;; esac
+case "$failed_sequence" in *[!0-9]*|'') failed_sequence=0 ;; esac
+sequence_floor=$current_sequence
+[ "$failed_sequence" -le "$sequence_floor" ] || sequence_floor=$failed_sequence
 current_release=$(cat "$persist/state/ota/current-release-id" 2>/dev/null || true)
+failed_release=$(cat "$persist/state/ota/failed-release-id" 2>/dev/null || true)
 if [ "$release_id" = "$current_release" ]; then
   echo "CyberHIVE OTA: already on release $release_id"
   exit 0
 fi
-[ "$sequence" -gt "$current_sequence" ] || { echo "refusing OTA replay/downgrade: sequence=$sequence current=$current_sequence" >&2; exit 4; }
+if [ -n "$failed_release" ] && [ "$release_id" = "$failed_release" ]; then
+  echo "refusing previously failed OTA release: $release_id" >&2
+  exit 4
+fi
+[ "$sequence" -gt "$sequence_floor" ] || {
+  echo "refusing OTA replay/downgrade/quarantine: sequence=$sequence floor=$sequence_floor" >&2
+  exit 4
+}
 
 curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 "$bundle_url" -o "$bundle"
 actual_bytes=$(wc -c <"$bundle" | tr -d ' ')
@@ -93,11 +159,9 @@ if ! tar -tvf "$bundle" | awk 'substr($1,1,1) != "-" { bad=1 } END { exit bad }'
   exit 5
 fi
 
-slot_mount=/run/cyberhive/slot-target
 mkdir -p "$slot_mount"
-if mountpoint -q "$slot_mount"; then umount "$slot_mount"; fi
 mount -o rw,nodev,nosuid "$target_dev" "$slot_mount"
-trap 'umount /run/cyberhive/slot-target 2>/dev/null || true; rm -rf "$work"' EXIT HUP INT TERM
+slot_mounted='true'
 new="$slot_mount/slots/${inactive}.new"
 old="$slot_mount/slots/${inactive}.old"
 current_dir="$slot_mount/slots/$inactive"
@@ -113,11 +177,23 @@ mv "$new" "$current_dir"
 rm -rf "$old"
 sync -f "$slot_mount" 2>/dev/null || sync
 umount "$slot_mount"
-trap 'rm -rf "$work"' EXIT HUP INT TERM
+slot_mounted='false'
 
-efi_mount=/run/cyberhive/efi
+# Persist the complete pending transaction before making the candidate bootable.
+otadir="$persist/state/ota"
+atomic_copy "$manifest" "$otadir/pending-channel.json"
+atomic_copy "$sig" "$otadir/pending-channel.json.sig"
+atomic_text "$source_commit" "$otadir/pending-source-commit"
+atomic_text "$sequence" "$otadir/pending-sequence"
+atomic_text "$release_id" "$otadir/pending-release-id"
+atomic_text "$inactive" "$otadir/pending-slot"
+atomic_text "$current" "$otadir/pending-previous-slot"
+rm -f "$otadir/commit-transaction.json"
+sync
+
 mkdir -p "$efi_mount"
-if ! mountpoint -q "$efi_mount"; then mount -o rw,nodev,nosuid,noexec "$efi_dev" "$efi_mount"; fi
+mount -o rw,nodev,nosuid,noexec "$efi_dev" "$efi_mount"
+efi_mounted='true'
 envfile="$efi_mount/cyberhive/grubenv"
 [ -f "$envfile" ] || grub-editenv "$envfile" create
 grub-editenv "$envfile" set \
@@ -125,11 +201,8 @@ grub-editenv "$envfile" set \
   "pending_slot=$inactive" \
   'tries=1' \
   "pending_release_id=$release_id"
-
-install -m 0600 "$manifest" "$persist/state/ota/pending-channel.json"
-install -m 0600 "$sig" "$persist/state/ota/pending-channel.json.sig"
-printf '%s\n' "$source_commit" >"$persist/state/ota/pending-source-commit"
-printf '%s\n' "$sequence" >"$persist/state/ota/pending-sequence"
+sync
+atomic_text 'armed' "$otadir/pending-phase"
 sync
 
 echo "CyberHIVE OTA staged: release=$release_id slot=$inactive source_commit=$source_commit"

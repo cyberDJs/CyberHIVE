@@ -1,14 +1,26 @@
 #!/bin/sh
 set -eu
 
-apply_rule() {
+ensure_rule() {
   bin=$1
+  shift
   if ! command -v "$bin" >/dev/null 2>&1; then return 0; fi
-  if "$bin" -C INPUT '!' -i tailscale0 -p tcp -m multiport --dports 22,80 -j DROP >/dev/null 2>&1; then
-    return 0
-  fi
-  "$bin" -I INPUT 1 '!' -i tailscale0 -p tcp -m multiport --dports 22,80 -j DROP
+  if "$bin" -C INPUT "$@" >/dev/null 2>&1; then return 0; fi
+  "$bin" -I INPUT 1 "$@"
 }
 
-apply_rule iptables
-apply_rule ip6tables
+# SSH is tailnet-only.
+ensure_rule iptables '!' -i tailscale0 -p tcp --dport 22 -j DROP
+ensure_rule ip6tables '!' -i tailscale0 -p tcp --dport 22 -j DROP
+
+# Install HTTP drop first, then local exceptions above it. Tailscale traffic
+# never matches these non-tailscale rules.
+ensure_rule iptables '!' -i tailscale0 -p tcp --dport 80 -j DROP
+for net in 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16; do
+  ensure_rule iptables '!' -i tailscale0 -s "$net" -p tcp --dport 80 -j ACCEPT
+done
+
+ensure_rule ip6tables '!' -i tailscale0 -p tcp --dport 80 -j DROP
+for net in ::1/128 fc00::/7 fe80::/10; do
+  ensure_rule ip6tables '!' -i tailscale0 -s "$net" -p tcp --dport 80 -j ACCEPT
+done

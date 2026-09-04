@@ -15,6 +15,12 @@ else
   ts_status='pending'
 fi
 
+if [ "$lan_ip" = 'pending-network' ]; then
+  pair_url='pending local network'
+else
+  pair_url="http://$lan_ip (physical pairing only)"
+fi
+
 auth_mode=$(cat "$CYBERHIVE_STATE_DIR/ssh-mode" 2>/dev/null || printf '%s' initializing)
 pairing_code=$(cat "$CYBERHIVE_CONTROL_DIR/pairing-code" 2>/dev/null || printf '%s' initializing)
 ssh_password=$(cat "$CYBERHIVE_PRIVATE_DIR/ssh-password" 2>/dev/null || true)
@@ -37,7 +43,8 @@ cat <<EOT
   Web          $web_url
   Tailscale    $ts_status
   SSH          $ssh_target
-  LAN IPv4     $lan_ip (management blocked)
+  LAN IPv4     $lan_ip (SSH blocked; HTTP pairing only)
+  Pair URL     $pair_url
   SSH auth     $auth_mode
   SSH host     $fingerprint
   Persistence  $persist_state
