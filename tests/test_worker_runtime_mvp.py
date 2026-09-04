@@ -124,6 +124,71 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.assertTrue(payload["metadata"]["result_payload_truncated"])
         self.assertLessEqual(runtime._result_payload_bytes(payload), runtime.policy.max_result_payload_bytes)
 
+    def test_result_payload_size_uses_channel_canonical_serializer(self) -> None:
+        class LargeCanonicalObject:
+            def __str__(self) -> str:
+                return "tiny"
+
+            def as_dict(self) -> dict[str, str]:
+                return {"blob": "x" * 4096}
+
+        _channel, gateway, delivery, runtime = self.build_stack()
+        runtime.policy = WorkerRuntimePolicy(max_result_payload_bytes=1024)
+
+        def large_canonical_result(_request, _context):
+            current = datetime.now(timezone.utc)
+            return AgentActionResult(
+                request_id="canonical-large-result",
+                target_node="node.beta",
+                action=AgentActionType.HEALTH_CHECK,
+                status=AgentActionStatus.DRY_RUN,
+                reason="canonical large result",
+                created_at=current,
+                completed_at=current,
+                metadata={"opaque": LargeCanonicalObject()},
+            )
+
+        runtime.handlers.register(AgentActionType.HEALTH_CHECK, large_canonical_result, replace=True)
+        delivery.enqueue_action(node_id="node.beta", session_id="sess-1", action="health_check", dry_run=True)
+        delivery.dispatch_ready()[0]
+        outcome = runtime.process_action_envelope(gateway.outbox[-1])
+
+        payload = outcome.result_envelope.payload
+        self.assertEqual(payload["status"], AgentActionStatus.FAILED.value)
+        self.assertTrue(payload["metadata"]["result_payload_truncated"])
+        self.assertLessEqual(runtime._result_payload_bytes(payload), runtime.policy.max_result_payload_bytes)
+
+    def test_result_payload_truncation_bounds_oversized_identifiers(self) -> None:
+        _channel, gateway, delivery, runtime = self.build_stack()
+        runtime.policy = WorkerRuntimePolicy(max_result_payload_bytes=1024)
+        oversized_request_id = "request-" + ("x" * 4096)
+
+        def oversized_identifier_result(_request, _context):
+            current = datetime.now(timezone.utc)
+            return AgentActionResult(
+                request_id=oversized_request_id,
+                target_node="node.beta",
+                action=AgentActionType.HEALTH_CHECK,
+                status=AgentActionStatus.DRY_RUN,
+                reason="oversized identifier",
+                created_at=current,
+                completed_at=current,
+                metadata={"detail": "identifier should be bounded"},
+            )
+
+        runtime.handlers.register(AgentActionType.HEALTH_CHECK, oversized_identifier_result, replace=True)
+        delivery.enqueue_action(node_id="node.beta", session_id="sess-1", action="health_check", dry_run=True)
+        delivery.dispatch_ready()[0]
+        outcome = runtime.process_action_envelope(gateway.outbox[-1])
+
+        payload = outcome.result_envelope.payload
+        self.assertEqual(payload["status"], AgentActionStatus.FAILED.value)
+        self.assertNotEqual(payload["request_id"], oversized_request_id)
+        self.assertNotEqual(payload["action_request_id"], oversized_request_id)
+        self.assertTrue(payload["request_id"].startswith("request_truncated_"))
+        self.assertTrue(payload["action_request_id"].startswith("action_truncated_"))
+        self.assertLessEqual(runtime._result_payload_bytes(payload), runtime.policy.max_result_payload_bytes)
+
 
 if __name__ == "__main__":
     unittest.main()
