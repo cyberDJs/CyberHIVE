@@ -118,7 +118,11 @@ grep -F 'refusing OTA replay/downgrade/quarantine' "$update" >/dev/null
 grep -F 'refusing previously failed OTA release' "$update" >/dev/null
 grep -F 'another CyberHIVE OTA operation is active' "$update" >/dev/null
 grep -F 'refusing OTA restage: inactive slot already armed or pending' "$update" >/dev/null
+grep -F 'refusing OTA restage: EFI grubenv already armed or pending' "$update" >/dev/null
+grep -F 'grub-editenv "$envfile" list' "$update" >/dev/null
 assert_before "$update" 'refusing OTA restage: inactive slot already armed or pending' 'mount -o rw,nodev,nosuid "$target_dev" "$slot_mount"'
+assert_before "$update" 'refusing OTA restage: EFI grubenv already armed or pending' 'mount -o rw,nodev,nosuid "$target_dev" "$slot_mount"'
+assert_before "$update" 'mount -o ro,nodev,nosuid,noexec "$efi_dev" "$efi_mount"' 'mount -o rw,nodev,nosuid "$target_dev" "$slot_mount"'
 grep -F 'read_sequence_file()' "$update" >/dev/null
 grep -F 'malformed persisted current-sequence; refusing OTA' "$update" >/dev/null
 grep -F 'malformed persisted failed-sequence; refusing OTA' "$update" >/dev/null
@@ -133,9 +137,17 @@ if grep -F 'blkid -L' "$commit"; then echo 'boot commit must not resolve critica
 grep -F 'candidate persistence unavailable; rebooting for automatic rollback' "$commit" >/dev/null
 grep -F 'commit-transaction.json' "$commit" >/dev/null
 grep -F 'invalid commit transaction schema' "$commit" >/dev/null
+grep -F 'rollback_candidate_reboot()' "$commit" >/dev/null
+grep -F 'failed to write rollback grubenv' "$commit" >/dev/null
+grep -F 'EFI remount rw failed during' "$commit" >/dev/null
+grep -F 'rollback_malformed_transaction()' "$commit" >/dev/null
+grep -F 'malformed-commit-transaction' "$commit" >/dev/null
 grep -F 'incomplete-commit-rollback' "$commit" >/dev/null
 grep -F 'rollback-detected' "$commit" >/dev/null
 grep -F 'quarantine_release "$state_pending_release" "$state_pending_sequence" health-gate' "$commit" >/dev/null
+grep -F 'rollback_candidate_reboot health-gate' "$commit" >/dev/null
+grep -F 'rollback_candidate_reboot malformed-current-sequence' "$commit" >/dev/null
+grep -F 'rollback_candidate_reboot incomplete-pending-metadata' "$commit" >/dev/null
 grep -F 'read_sequence_file()' "$commit" >/dev/null
 grep -F 'malformed persisted current-sequence; rolling back candidate' "$commit" >/dev/null
 grep -F 'quarantine_release "$state_pending_release" "$state_pending_sequence" malformed-current-sequence' "$commit" >/dev/null
@@ -155,6 +167,10 @@ grep -F 'set efi="$boot_disk,gpt1"' "$builder" >/dev/null
 grep -F 'set slotdev="$boot_disk,gpt2"' "$builder" >/dev/null
 grep -F 'set slotdev="$boot_disk,gpt3"' "$builder" >/dev/null
 grep -F 'cannot prove boot EFI parent' "$builder" >/dev/null
+grep -F 'probe --fs-uuid --set=slot_uuid "$slotdev"' "$builder" >/dev/null
+grep -F 'cannot prove selected slot filesystem UUID' "$builder" >/dev/null
+grep -F 'live-media=/dev/disk/by-uuid/$slot_uuid' "$builder" >/dev/null
+grep -F 'cyberhive.slot_uuid=$slot_uuid' "$builder" >/dev/null
 if grep -F 'search --no-floppy --label' "$builder"; then echo 'GRUB slot selection must not use globally non-unique labels' >&2; exit 1; fi
 grep -F '"usb_written": false' "$builder" >/dev/null
 if grep -F '/dev/sd' "$builder"; then echo 'image builder must not name a physical disk target' >&2; exit 1; fi

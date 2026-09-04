@@ -27,6 +27,7 @@ Turn the physically proven v0.2 live appliance into a development node that can 
 - failed/rolled-back releases are quarantined to prevent unattended reboot loops
 - manual and periodic OTA writers are serialized
 - host internal disks remain outside the update/write surface, including when the CyberHIVE USB reports `RM=0`
+- live-boot is constrained to the firmware-selected slot partition instead of globally scanning for the slot path
 
 ## First bootstrap
 
@@ -36,7 +37,7 @@ A bootstrap SSH public key is included so the owner can reach the node as soon a
 
 ## Single-USB update transaction
 
-`current A -> lock -> verify common USB parent -> download signed bundle -> verify -> install B.new -> atomically promote B -> persist pending STATE metadata -> sync -> set GRUB pending_slot=B, previous_slot=A, tries=1 -> reboot -> health gate -> transactionally commit B or quarantine + reboot -> GRUB rollback A`.
+`current A -> GRUB selects slot by EFI parent + filesystem UUID -> lock -> verify common USB parent -> download signed bundle -> verify -> install B.new -> atomically promote B -> persist pending STATE metadata -> sync -> set GRUB pending_slot=B, previous_slot=A, tries=1 -> reboot -> health gate -> transactionally commit B or quarantine + reboot -> GRUB rollback A`.
 
 The runtime updater never calls `dd`, `mkfs`, `wipefs`, `parted` or `sgdisk`. It mutates only the removable inactive slot partition, the matching STATE transaction journal and the matching removable EFI `grubenv`.
 

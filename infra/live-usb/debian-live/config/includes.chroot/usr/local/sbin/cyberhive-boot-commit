@@ -81,6 +81,23 @@ efi_ro() {
   mount -o remount,ro,nodev,nosuid,noexec "$efi_mount"
 }
 
+rollback_candidate_reboot() {
+  reason=$1
+  if efi_rw; then
+    if grub-editenv "$envfile" set 'tries=0'; then
+      sync
+    else
+      echo "CyberHIVE boot commit: failed to write rollback grubenv for $reason" >&2
+    fi
+    efi_ro || true
+  else
+    echo "CyberHIVE boot commit: EFI remount rw failed during $reason; rebooting for automatic rollback" >&2
+  fi
+  sleep 5
+  systemctl reboot
+  exit 1
+}
+
 current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
 case "$current" in A|B) ;; *) echo 'CyberHIVE boot commit: current slot unknown' >&2; exit 2 ;; esac
 
@@ -135,19 +152,39 @@ fi
 otadir="$persist/state/ota"
 mkdir -p "$persist/state/evidence" "$otadir"
 transaction="$otadir/commit-transaction.json"
+state_pending_slot=$(cat "$otadir/pending-slot" 2>/dev/null || true)
+state_pending_release=$(cat "$otadir/pending-release-id" 2>/dev/null || true)
+state_pending_sequence=$(cat "$otadir/pending-sequence" 2>/dev/null || true)
+
+rollback_malformed_transaction() {
+  reason=$1
+  echo "CyberHIVE boot commit: $reason; rolling back pending candidate" >&2
+  quarantine_release "$state_pending_release" "$state_pending_sequence" "$reason"
+  clear_pending_state
+  rm -f "$transaction"
+  record_health fail "$reason"
+  sync
+  if [ "$pending" = "$current" ]; then
+    rollback_candidate_reboot "$reason"
+  fi
+  exit 1
+}
 
 if [ -f "$transaction" ]; then
-  jq -e '.schema == "cyberhive.ota.commit.v1"' "$transaction" >/dev/null 2>&1 || { echo 'CyberHIVE boot commit: invalid commit transaction schema' >&2; exit 2; }
+  jq -e '.schema == "cyberhive.ota.commit.v1"' "$transaction" >/dev/null 2>&1 || {
+    echo 'CyberHIVE boot commit: invalid commit transaction schema' >&2
+    rollback_malformed_transaction malformed-commit-transaction
+  }
   tx_new_slot=$(jq -r '.new_slot' "$transaction")
   tx_new_release=$(jq -r '.new_release_id' "$transaction")
   tx_new_sequence=$(jq -r '.new_sequence' "$transaction")
   tx_old_release=$(jq -r '.old_release_id // ""' "$transaction")
   tx_old_sequence=$(jq -r '.old_sequence' "$transaction")
-  case "$tx_new_slot" in A|B) ;; *) echo 'CyberHIVE boot commit: invalid transaction new slot' >&2; exit 2 ;; esac
-  [ -n "$tx_new_release" ] && [ "$tx_new_release" != null ] || { echo 'CyberHIVE boot commit: invalid transaction release' >&2; exit 2; }
-  case "$tx_new_sequence" in *[!0-9]*|'') echo 'CyberHIVE boot commit: invalid transaction new sequence' >&2; exit 2 ;; esac
-  [ "$tx_new_sequence" -gt 0 ] || { echo 'CyberHIVE boot commit: invalid transaction new sequence' >&2; exit 2; }
-  case "$tx_old_sequence" in *[!0-9]*|'') echo 'CyberHIVE boot commit: invalid transaction old sequence' >&2; exit 2 ;; esac
+  case "$tx_new_slot" in A|B) ;; *) rollback_malformed_transaction malformed-commit-transaction ;; esac
+  [ -n "$tx_new_release" ] && [ "$tx_new_release" != null ] || rollback_malformed_transaction malformed-commit-transaction
+  case "$tx_new_sequence" in *[!0-9]*|'') rollback_malformed_transaction malformed-commit-transaction ;; esac
+  [ "$tx_new_sequence" -gt 0 ] || rollback_malformed_transaction malformed-commit-transaction
+  case "$tx_old_sequence" in *[!0-9]*|'') rollback_malformed_transaction malformed-commit-transaction ;; esac
   if [ "$current" = "$tx_new_slot" ]; then
     atomic_text "$tx_new_release" "$otadir/current-release-id"
     atomic_text "$tx_new_sequence" "$otadir/current-sequence"
@@ -215,13 +252,7 @@ if [ "$pending" = "$current" ]; then
     quarantine_release "$state_pending_release" "$state_pending_sequence" incomplete-pending-metadata
     record_health fail incomplete-pending-metadata
     sync
-    efi_rw
-    grub-editenv "$envfile" set 'tries=0'
-    sync
-    efi_ro
-    sleep 5
-    systemctl reboot
-    exit 1
+    rollback_candidate_reboot incomplete-pending-metadata
   fi
 fi
 
@@ -248,13 +279,7 @@ if [ "$health_ok" = 'true' ]; then
       quarantine_release "$state_pending_release" "$state_pending_sequence" malformed-current-sequence
       record_health fail malformed-current-sequence
       sync
-      efi_rw
-      grub-editenv "$envfile" set 'tries=0'
-      sync
-      efi_ro
-      sleep 5
-      systemctl reboot
-      exit 1
+      rollback_candidate_reboot malformed-current-sequence
     }
     tx_tmp="$transaction.tmp.$$"
     jq -n --arg new_slot "$current" --arg new_release_id "$state_pending_release" --argjson new_sequence "$state_pending_sequence" --arg old_release_id "$old_release" --argjson old_sequence "$old_sequence" '{schema:"cyberhive.ota.commit.v1",new_slot:$new_slot,new_release_id:$new_release_id,new_sequence:$new_sequence,old_release_id:$old_release_id,old_sequence:$old_sequence}' >"$tx_tmp"
@@ -283,12 +308,7 @@ record_health fail health-gate
 if [ "$candidate" = 'true' ]; then
   quarantine_release "$state_pending_release" "$state_pending_sequence" health-gate
   sync
-  efi_rw
-  grub-editenv "$envfile" set 'tries=0'
-  sync
-  efi_ro
-  sleep 5
-  systemctl reboot
+  rollback_candidate_reboot health-gate
 fi
 sync
 exit 1

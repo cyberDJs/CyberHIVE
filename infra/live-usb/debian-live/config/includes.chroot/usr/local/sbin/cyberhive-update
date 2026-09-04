@@ -110,6 +110,30 @@ if [ -s "$otadir/pending-slot" ] \
   echo "refusing OTA restage: inactive slot already armed or pending; slot=${pending_slot:-unknown} release=${pending_release:-unknown} phase=${pending_phase:-unknown}" >&2
   exit 4
 fi
+
+mkdir -p "$efi_mount"
+mount -o ro,nodev,nosuid,noexec "$efi_dev" "$efi_mount"
+efi_mounted='true'
+envfile="$efi_mount/cyberhive/grubenv"
+if [ -f "$envfile" ]; then
+  efi_state=$(grub-editenv "$envfile" list) || {
+    echo 'refusing OTA restage: EFI grubenv unreadable' >&2
+    exit 4
+  }
+  efi_pending_slot=$(printf '%s\n' "$efi_state" | sed -n 's/^pending_slot=//p' | head -n 1)
+  efi_pending_release=$(printf '%s\n' "$efi_state" | sed -n 's/^pending_release_id=//p' | head -n 1)
+  efi_previous_slot=$(printf '%s\n' "$efi_state" | sed -n 's/^previous_slot=//p' | head -n 1)
+  efi_tries=$(printf '%s\n' "$efi_state" | sed -n 's/^tries=//p' | head -n 1)
+  if [ -n "$efi_pending_slot" ] \
+     || [ -n "$efi_pending_release" ] \
+     || [ -n "$efi_previous_slot" ] \
+     || [ -n "$efi_tries" ]; then
+    echo "refusing OTA restage: EFI grubenv already armed or pending; slot=${efi_pending_slot:-unknown} release=${efi_pending_release:-unknown} tries=${efi_tries:-unknown}" >&2
+    exit 4
+  fi
+fi
+umount "$efi_mount"
+efi_mounted='false'
 manifest="$work/channel.json"
 sig="$work/channel.json.sig"
 bundle="$work/slot.tar"

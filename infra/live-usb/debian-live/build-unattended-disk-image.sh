@@ -145,7 +145,14 @@ if [ ! -f "$slotroot/vmlinuz" -o ! -f "$slotroot/initrd.img" -o ! -f "$slotroot/
   reboot
 fi
 
-linux "$slotroot/vmlinuz" boot=live components username=cyberhive hostname=cyberhive-live live-media-path=$live_path cyberhive.slot=$boot_slot quiet splash panic=30
+probe --fs-uuid --set=slot_uuid "$slotdev"
+if [ -z "$slot_uuid" ]; then
+  echo "CyberHIVE: cannot prove selected slot filesystem UUID"
+  sleep 30
+  reboot
+fi
+
+linux "$slotroot/vmlinuz" boot=live components username=cyberhive hostname=cyberhive-live live-media=/dev/disk/by-uuid/$slot_uuid live-media-path=$live_path cyberhive.slot=$boot_slot cyberhive.slot_uuid=$slot_uuid quiet splash panic=30
 initrd "$slotroot/initrd.img"
 boot
 EOGRUB
