@@ -117,7 +117,12 @@ if grep -n -E '(^|[[:space:]])(dd|mkfs|wipefs|parted|fdisk)([[:space:]]|$)' "$gu
   echo 'host disk guard must remain detection-only' >&2
   exit 1
 fi
-grep -F 'RM 2>/dev/null' "$guard" >/dev/null
+if grep -F 'allowed_parent' "$guard" >/dev/null; then
+  grep -F 'TRAN "$candidate"' "$guard" >/dev/null
+  grep -F 'fully validated CyberHIVE USB parent' "$guard" >/dev/null
+else
+  grep -F 'RM 2>/dev/null' "$guard" >/dev/null
+fi
 grep -F '*,rw,*)' "$guard" >/dev/null
 
 support="$root/usr/local/bin/cyberhive-support-bundle"
