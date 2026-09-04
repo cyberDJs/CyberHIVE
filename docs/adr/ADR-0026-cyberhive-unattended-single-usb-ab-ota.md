@@ -16,7 +16,7 @@ Use one removable USB with two trust/storage layers:
 1. a small stable UEFI partition labeled `CYBER_EFI`, containing a standalone GRUB loader and a writable GRUB environment block;
 2. two ext4 runtime partitions labeled `CYBERHIVE_A` and `CYBERHIVE_B`, plus a separate ext4 `CYBERHIVE_STATE` partition for persistent operator/device state.
 
-GRUB is not replaced by ordinary OTA. It loads the kernel and initrd from the slot on the firmware-selected EFI parent and passes live-boot both the selected slot filesystem UUID and `live-media-path`. OTA downloads a signed slot bundle into the inactive slot, verifies signature, bytes and SHA-256, and marks it pending. The bootloader gives the pending slot one attempt. Userspace health commits it; otherwise a reboot returns to the previous slot.
+GRUB is not replaced by ordinary OTA. It loads the kernel and initrd from the slot on the firmware-selected EFI parent, rejects a visible duplicate selected-slot filesystem UUID and passes live-boot both the selected slot filesystem UUID and `live-media-path`. OTA downloads a signed slot bundle into the inactive slot, verifies signature, bytes and SHA-256, and marks it pending. The bootloader gives the pending slot one attempt. Userspace health commits it; otherwise a reboot returns to the previous slot.
 
 `CYBERHIVE_STATE` is the durable transaction journal. The updater persists and syncs complete pending metadata before arming GRUB. A healthy candidate writes a recoverable commit transaction and advances anti-downgrade state before clearing pending boot state in EFI. On the next boot, an interrupted cross-filesystem commit is either finalized on the candidate slot or restored to the previous release state after rollback.
 

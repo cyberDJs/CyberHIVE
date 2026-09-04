@@ -106,6 +106,10 @@ grep -F 'nmcli --ask device wifi connect "$ssid"' "$firstboot" >/dev/null
 if grep -F 'wifi_password' "$firstboot"; then echo 'firstboot must not place Wi-Fi secrets in variables or argv' >&2; exit 1; fi
 if grep -F 'password "$wifi_password"' "$firstboot"; then echo 'firstboot must not pass Wi-Fi secrets in process arguments' >&2; exit 1; fi
 
+onboarding="$root/usr/local/sbin/cyberhive-onboarding-init"
+grep -F 'existing_persist_state=$(cat "$CYBERHIVE_STATE_DIR/persistence-state"' "$onboarding" >/dev/null
+grep -F 'case "$existing_persist_state" in mounted:*) persist_state=$existing_persist_state ;; esac' "$onboarding" >/dev/null
+
 update="$root/usr/local/sbin/cyberhive-update"
 grep -F '. /usr/local/lib/cyberhive-device.sh' "$update" >/dev/null
 grep -F 'cyberhive_live_medium_device' "$update" >/dev/null
@@ -148,6 +152,9 @@ grep -F 'quarantine_release "$state_pending_release" "$state_pending_sequence" h
 grep -F 'rollback_candidate_reboot health-gate' "$commit" >/dev/null
 grep -F 'rollback_candidate_reboot malformed-current-sequence' "$commit" >/dev/null
 grep -F 'rollback_candidate_reboot incomplete-pending-metadata' "$commit" >/dev/null
+grep -F 'clearing incomplete pre-arm pending STATE journal' "$commit" >/dev/null
+grep -F 'recovered-pre-arm-journal' "$commit" >/dev/null
+assert_before "$commit" 'clearing incomplete pre-arm pending STATE journal' 'if [ -n "$state_pending_release" ] && [ "$pending" != "$state_pending_slot" ]; then'
 grep -F 'read_sequence_file()' "$commit" >/dev/null
 grep -F 'malformed persisted current-sequence; rolling back candidate' "$commit" >/dev/null
 grep -F 'quarantine_release "$state_pending_release" "$state_pending_sequence" malformed-current-sequence' "$commit" >/dev/null
@@ -171,6 +178,9 @@ grep -F 'probe --fs-uuid --set=slot_uuid "$slotdev"' "$builder" >/dev/null
 grep -F 'cannot prove selected slot filesystem UUID' "$builder" >/dev/null
 grep -F 'live-media=/dev/disk/by-uuid/$slot_uuid' "$builder" >/dev/null
 grep -F 'cyberhive.slot_uuid=$slot_uuid' "$builder" >/dev/null
+grep -F 'slot_uuid_duplicate' "$builder" >/dev/null
+grep -F 'duplicate selected slot filesystem UUID' "$builder" >/dev/null
+assert_before "$builder" 'duplicate selected slot filesystem UUID' 'linux "$slotroot/vmlinuz"'
 if grep -F 'search --no-floppy --label' "$builder"; then echo 'GRUB slot selection must not use globally non-unique labels' >&2; exit 1; fi
 grep -F '"usb_written": false' "$builder" >/dev/null
 if grep -F '/dev/sd' "$builder"; then echo 'image builder must not name a physical disk target' >&2; exit 1; fi

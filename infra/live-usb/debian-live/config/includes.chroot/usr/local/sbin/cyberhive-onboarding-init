@@ -55,6 +55,8 @@ persist_keys=''
 persist_host_dir=''
 if mountpoint -q "$CYBERHIVE_PERSIST_ROOT"; then
   persist_state='mounted'
+  existing_persist_state=$(cat "$CYBERHIVE_STATE_DIR/persistence-state" 2>/dev/null || true)
+  case "$existing_persist_state" in mounted:*) persist_state=$existing_persist_state ;; esac
   persist_keys="$CYBERHIVE_PERSIST_ROOT/state/ssh/authorized_keys"
   persist_host_dir="$CYBERHIVE_PERSIST_ROOT/state/ssh/host_keys"
 fi

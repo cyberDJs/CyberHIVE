@@ -216,6 +216,22 @@ state_pending_slot=$(cat "$otadir/pending-slot" 2>/dev/null || true)
 state_pending_release=$(cat "$otadir/pending-release-id" 2>/dev/null || true)
 state_pending_sequence=$(cat "$otadir/pending-sequence" 2>/dev/null || true)
 
+if [ -z "$pending" ] \
+   && { [ -n "$state_pending_slot" ] || [ -n "$state_pending_release" ] || [ -n "$state_pending_sequence" ]; }; then
+  if [ -z "$state_pending_slot" ] \
+     || [ -z "$state_pending_release" ] \
+     || [ -z "$state_pending_sequence" ]; then
+    echo 'CyberHIVE boot commit: clearing incomplete pre-arm pending STATE journal' >&2
+    clear_pending_state
+    rm -f "$transaction"
+    record_health pass recovered-pre-arm-journal
+    sync
+    state_pending_slot=''
+    state_pending_release=''
+    state_pending_sequence=''
+  fi
+fi
+
 if [ -n "$state_pending_release" ] && [ "$pending" != "$state_pending_slot" ]; then
   if [ "$current" != "$state_pending_slot" ]; then
     quarantine_release "$state_pending_release" "$state_pending_sequence" rollback-detected

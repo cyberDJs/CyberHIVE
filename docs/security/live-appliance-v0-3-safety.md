@@ -26,7 +26,7 @@ Only the removable parent disk that contains `CYBER_EFI`, `CYBERHIVE_A`, `CYBERH
 
 ## OTA verification and transaction order
 
-GRUB resolves the slot partitions relative to the firmware-selected EFI device and passes live-boot a selected-slot filesystem UUID device constraint. Runtime verification still rechecks that the live medium, EFI and STATE partitions share the same USB parent before writable access.
+GRUB resolves the slot partitions relative to the firmware-selected EFI device, rejects a visible duplicate selected-slot filesystem UUID and passes live-boot a selected-slot filesystem UUID device constraint. Runtime verification still rechecks that the live medium, EFI and STATE partitions share the same USB parent before writable access.
 
 1. acquire the single OTA runtime lock
 2. verify current slot, inactive slot, STATE and EFI resolve to one USB parent

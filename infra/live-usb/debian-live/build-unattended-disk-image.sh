@@ -152,6 +152,27 @@ if [ -z "$slot_uuid" ]; then
   reboot
 fi
 
+set slot_uuid_match=
+set slot_uuid_duplicate=
+for candidate in hd0,gpt2 hd0,gpt3 hd1,gpt2 hd1,gpt3 hd2,gpt2 hd2,gpt3 hd3,gpt2 hd3,gpt3 hd4,gpt2 hd4,gpt3 hd5,gpt2 hd5,gpt3 hd6,gpt2 hd6,gpt3 hd7,gpt2 hd7,gpt3 hd8,gpt2 hd8,gpt3 hd9,gpt2 hd9,gpt3 hd10,gpt2 hd10,gpt3 hd11,gpt2 hd11,gpt3 hd12,gpt2 hd12,gpt3 hd13,gpt2 hd13,gpt3 hd14,gpt2 hd14,gpt3 hd15,gpt2 hd15,gpt3; do
+  set candidate_uuid=
+  if [ -f "($candidate)/slots/A/vmlinuz" -o -f "($candidate)/slots/B/vmlinuz" ]; then
+    probe --fs-uuid --set=candidate_uuid "$candidate"
+    if [ "$candidate_uuid" = "$slot_uuid" ]; then
+      if [ -z "$slot_uuid_match" ]; then
+        set slot_uuid_match="$candidate"
+      else
+        if [ "$slot_uuid_match" != "$candidate" ]; then set slot_uuid_duplicate=true; fi
+      fi
+    fi
+  fi
+done
+if [ "$slot_uuid_duplicate" = true ]; then
+  echo "CyberHIVE: duplicate selected slot filesystem UUID"
+  sleep 30
+  reboot
+fi
+
 linux "$slotroot/vmlinuz" boot=live components username=cyberhive hostname=cyberhive-live live-media=/dev/disk/by-uuid/$slot_uuid live-media-path=$live_path cyberhive.slot=$boot_slot cyberhive.slot_uuid=$slot_uuid quiet splash panic=30
 initrd "$slotroot/initrd.img"
 boot

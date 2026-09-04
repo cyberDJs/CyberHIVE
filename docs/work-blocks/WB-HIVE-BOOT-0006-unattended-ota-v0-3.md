@@ -27,7 +27,7 @@ Turn the physically proven v0.2 live appliance into a development node that can 
 - failed/rolled-back releases are quarantined to prevent unattended reboot loops
 - manual and periodic OTA writers are serialized
 - host internal disks remain outside the update/write surface, including when the CyberHIVE USB reports `RM=0`
-- live-boot is constrained to the firmware-selected slot partition instead of globally scanning for the slot path
+- live-boot is constrained to the firmware-selected slot partition instead of globally scanning for the slot path, and visible duplicate selected-slot UUIDs are rejected before boot
 
 ## First bootstrap
 
