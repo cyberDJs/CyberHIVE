@@ -65,3 +65,12 @@ PYTHONPATH=src python3 scripts/validate_cache_reuse_mvp.py
 PYTHONPATH=src python3 scripts/validate_data_mover_mvp.py
 PYTHONPATH=src python3 scripts/demo_worker_runtime_block_a.py
 ```
+
+## Block L P2 repair
+
+- Result payload size is measured with the same canonical serialization used by
+  Secure Channel signing. Objects exposing `as_dict()` or `value` cannot bypass
+  `WorkerRuntimePolicy.max_result_payload_bytes` through a small `str()` value.
+- The truncation fallback bounds `request_id` and `action_request_id`, removes
+  unbounded metadata/events, and rechecks the final signed payload size before
+  returning it.
