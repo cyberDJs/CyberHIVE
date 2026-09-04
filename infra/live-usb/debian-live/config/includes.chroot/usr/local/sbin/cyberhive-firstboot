@@ -10,7 +10,7 @@ mountpoint -q "$persist" || systemctl start cyberhive-persist-init.service
 
 printf '\n=== CyberHIVE v0.3 first boot ===\n'
 printf 'This one-time setup stores Wi-Fi and Tailscale state only on the USB STATE area.\n'
-printf 'No Wi-Fi password is written to the image, GitHub, shell history or support bundle.\n\n'
+printf 'No Wi-Fi password is written to the image, GitHub, shell history, process arguments or support bundle.\n\n'
 
 systemctl start NetworkManager.service
 i=0
@@ -28,15 +28,8 @@ if ! nmcli -t -f TYPE,STATE device 2>/dev/null | grep -q '^wifi:connected$'; the
   printf '\nSSID: '
   IFS= read -r ssid
   [ -n "$ssid" ] || { echo 'SSID is required' >&2; exit 3; }
-  printf 'Wi-Fi password: '
-  stty -echo
-  trap 'stty echo 2>/dev/null || true' EXIT HUP INT TERM
-  IFS= read -r wifi_password
-  stty echo
-  trap - EXIT HUP INT TERM
-  printf '\n'
-  nmcli device wifi connect "$ssid" password "$wifi_password"
-  wifi_password=''
+  printf 'NetworkManager will request the Wi-Fi secret on its protected interactive prompt.\n'
+  nmcli --ask device wifi connect "$ssid"
 fi
 
 install -d -m 0700 "$persist/state/network"

@@ -88,9 +88,12 @@ grep -F 'cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_STATE_LABE
 assert_before "$persist_init" 'cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_STATE_LABEL"' 'mount -o rw,nodev,nosuid "$state_dev" "$persist"'
 if grep -F 'blkid -L' "$persist_init"; then echo 'persist-init must not resolve critical siblings by global label' >&2; exit 1; fi
 
-grep -F 'state/network' "$root/usr/local/sbin/cyberhive-firstboot" >/dev/null
-grep -F 'tailscale up --hostname=' "$root/usr/local/sbin/cyberhive-firstboot" >/dev/null
-if grep -F 'echo "$wifi_password"' "$root/usr/local/sbin/cyberhive-firstboot"; then echo 'firstboot must not print Wi-Fi passwords' >&2; exit 1; fi
+firstboot="$root/usr/local/sbin/cyberhive-firstboot"
+grep -F 'state/network' "$firstboot" >/dev/null
+grep -F 'tailscale up --hostname=' "$firstboot" >/dev/null
+grep -F 'nmcli --ask device wifi connect "$ssid"' "$firstboot" >/dev/null
+if grep -F 'wifi_password' "$firstboot"; then echo 'firstboot must not place Wi-Fi secrets in variables or argv' >&2; exit 1; fi
+if grep -F 'password "$wifi_password"' "$firstboot"; then echo 'firstboot must not pass Wi-Fi secrets in process arguments' >&2; exit 1; fi
 
 update="$root/usr/local/sbin/cyberhive-update"
 grep -F '. /usr/local/lib/cyberhive-device.sh' "$update" >/dev/null
@@ -103,6 +106,9 @@ grep -F 'bundle SHA-256 mismatch' "$update" >/dev/null
 grep -F 'refusing OTA replay/downgrade/quarantine' "$update" >/dev/null
 grep -F 'refusing previously failed OTA release' "$update" >/dev/null
 grep -F 'another CyberHIVE OTA operation is active' "$update" >/dev/null
+grep -F 'read_sequence_file()' "$update" >/dev/null
+grep -F 'malformed persisted current-sequence; refusing OTA' "$update" >/dev/null
+grep -F 'malformed persisted failed-sequence; refusing OTA' "$update" >/dev/null
 assert_before "$update" 'atomic_text "$sequence" "$otadir/pending-sequence"' 'grub-editenv "$envfile" set'
 if grep -n -E '(^|[[:space:]])(dd|mkfs|wipefs|parted|sgdisk)([[:space:]]|$)' "$update"; then echo 'runtime OTA must not perform raw disk or partition mutation' >&2; exit 1; fi
 
@@ -117,6 +123,9 @@ grep -F 'invalid commit transaction schema' "$commit" >/dev/null
 grep -F 'incomplete-commit-rollback' "$commit" >/dev/null
 grep -F 'rollback-detected' "$commit" >/dev/null
 grep -F 'quarantine_release "$state_pending_release" "$state_pending_sequence" health-gate' "$commit" >/dev/null
+grep -F 'read_sequence_file()' "$commit" >/dev/null
+grep -F 'malformed persisted current-sequence' "$commit" >/dev/null
+grep -F 'cyberhive-host-disk-guard >/dev/null 2>&1' "$commit" >/dev/null
 
 host_guard="$root/usr/local/bin/cyberhive-host-disk-guard"
 grep -F '. /usr/local/lib/cyberhive-device.sh' "$host_guard" >/dev/null

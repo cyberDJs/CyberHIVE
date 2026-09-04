@@ -32,6 +32,17 @@ atomic_text() {
   mv "$tmp" "$target"
 }
 
+read_sequence_file() {
+  file=$1
+  if [ ! -e "$file" ]; then
+    printf '0\n'
+    return 0
+  fi
+  value=$(cat "$file" 2>/dev/null) || return 1
+  case "$value" in *[!0-9]*|'') return 1 ;; esac
+  printf '%s\n' "$value"
+}
+
 clear_pending_state() {
   rm -f \
     "$otadir/pending-channel.json" \
@@ -217,7 +228,8 @@ fi
 health_ok='false'
 end=$(( $(date +%s) + 120 ))
 while [ "$(date +%s)" -lt "$end" ]; do
-  if systemctl is-active --quiet ssh.service \
+  if cyberhive-host-disk-guard >/dev/null 2>&1 \
+     && systemctl is-active --quiet ssh.service \
      && systemctl is-active --quiet cyberhive-web.service \
      && systemctl is-active --quiet tailscaled.service \
      && tailscale status --json 2>/dev/null | jq -e '.BackendState == "Running"' >/dev/null 2>&1 \
@@ -231,8 +243,10 @@ done
 if [ "$health_ok" = 'true' ]; then
   if [ "$candidate" = 'true' ]; then
     old_release=$(cat "$otadir/current-release-id" 2>/dev/null || true)
-    old_sequence=$(cat "$otadir/current-sequence" 2>/dev/null || printf '0')
-    case "$old_sequence" in *[!0-9]*|'') old_sequence=0 ;; esac
+    old_sequence=$(read_sequence_file "$otadir/current-sequence") || {
+      echo 'CyberHIVE boot commit: malformed persisted current-sequence' >&2
+      exit 2
+    }
     tx_tmp="$transaction.tmp.$$"
     jq -n --arg new_slot "$current" --arg new_release_id "$state_pending_release" --argjson new_sequence "$state_pending_sequence" --arg old_release_id "$old_release" --argjson old_sequence "$old_sequence" '{schema:"cyberhive.ota.commit.v1",new_slot:$new_slot,new_release_id:$new_release_id,new_sequence:$new_sequence,old_release_id:$old_release_id,old_sequence:$old_sequence}' >"$tx_tmp"
     chmod 0600 "$tx_tmp"

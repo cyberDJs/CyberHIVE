@@ -55,6 +55,17 @@ atomic_copy() {
   mv "$tmp" "$target"
 }
 
+read_sequence_file() {
+  file=$1
+  if [ ! -e "$file" ]; then
+    printf '0\n'
+    return 0
+  fi
+  value=$(cat "$file" 2>/dev/null) || return 1
+  case "$value" in *[!0-9]*|'') return 1 ;; esac
+  printf '%s\n' "$value"
+}
+
 current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
 case "$current" in
   A) inactive=B; inactive_label="$CYBERHIVE_SLOT_B_LABEL" ;;
@@ -115,10 +126,14 @@ case "$expected_bytes" in *[!0-9]*|'') echo 'invalid bundle byte count' >&2; exi
 case "$sequence" in *[!0-9]*|'') echo 'invalid release sequence' >&2; exit 4 ;; esac
 [ "$sequence" -gt 0 ] || { echo 'release sequence must be positive' >&2; exit 4; }
 
-current_sequence=$(cat "$persist/state/ota/current-sequence" 2>/dev/null || printf '0')
-failed_sequence=$(cat "$persist/state/ota/failed-sequence" 2>/dev/null || printf '0')
-case "$current_sequence" in *[!0-9]*|'') current_sequence=0 ;; esac
-case "$failed_sequence" in *[!0-9]*|'') failed_sequence=0 ;; esac
+current_sequence=$(read_sequence_file "$persist/state/ota/current-sequence") || {
+  echo 'malformed persisted current-sequence; refusing OTA' >&2
+  exit 4
+}
+failed_sequence=$(read_sequence_file "$persist/state/ota/failed-sequence") || {
+  echo 'malformed persisted failed-sequence; refusing OTA' >&2
+  exit 4
+}
 sequence_floor=$current_sequence
 [ "$failed_sequence" -le "$sequence_floor" ] || sequence_floor=$failed_sequence
 current_release=$(cat "$persist/state/ota/current-release-id" 2>/dev/null || true)
