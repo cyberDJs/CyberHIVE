@@ -1,0 +1,56 @@
+#!/bin/sh
+set -eu
+. /etc/cyberhive/live/config.env
+
+persist="$CYBERHIVE_PERSIST_ROOT"
+mountpoint -q "$persist" || exit 2
+current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
+case "$current" in A|B) ;; *) exit 2 ;; esac
+
+efi_dev=$(blkid -L "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
+[ -n "$efi_dev" ] || exit 2
+efi_mount=/run/cyberhive/efi
+mkdir -p "$efi_mount"
+if ! mountpoint -q "$efi_mount"; then mount -o rw,nodev,nosuid,noexec "$efi_dev" "$efi_mount"; fi
+envfile="$efi_mount/cyberhive/grubenv"
+[ -f "$envfile" ] || exit 2
+pending=$(grub-editenv "$envfile" list | sed -n 's/^pending_slot=//p' | head -n 1)
+pending_release=$(grub-editenv "$envfile" list | sed -n 's/^pending_release_id=//p' | head -n 1)
+pending_sequence=$(cat "$persist/state/ota/pending-sequence" 2>/dev/null || true)
+
+health_ok='false'
+end=$(( $(date +%s) + 120 ))
+while [ "$(date +%s)" -lt "$end" ]; do
+  if systemctl is-active --quiet ssh.service \
+     && systemctl is-active --quiet cyberhive-web.service \
+     && systemctl is-active --quiet tailscaled.service \
+     && tailscale status --json 2>/dev/null | jq -e '.BackendState == "Running"' >/dev/null 2>&1 \
+     && cyberhive-live-health 2>/dev/null | jq -e '.status == "ok" and .host_disk_guard == "pass"' >/dev/null 2>&1; then
+    health_ok='true'
+    break
+  fi
+  sleep 5
+done
+
+mkdir -p "$persist/state/evidence" "$persist/state/ota"
+if [ "$health_ok" = 'true' ]; then
+  if [ "$pending" = "$current" ]; then
+    grub-editenv "$envfile" set "current_slot=$current" 'pending_slot=' 'previous_slot=' 'tries=' 'pending_release_id='
+    if [ -n "$pending_release" ]; then printf '%s\n' "$pending_release" >"$persist/state/ota/current-release-id"; fi
+    if [ -n "$pending_sequence" ]; then printf '%s\n' "$pending_sequence" >"$persist/state/ota/current-sequence"; fi
+    rm -f "$persist/state/ota/pending-channel.json" "$persist/state/ota/pending-channel.json.sig" "$persist/state/ota/pending-source-commit" "$persist/state/ota/pending-sequence"
+  fi
+  printf 'status=pass\nslot=%s\ntime=%s\n' "$current" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$persist/state/evidence/last-boot-health"
+  sync
+  exit 0
+fi
+
+printf 'status=fail\nslot=%s\ntime=%s\n' "$current" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$persist/state/evidence/last-boot-health"
+sync
+if [ "$pending" = "$current" ]; then
+  grub-editenv "$envfile" set 'tries=0'
+  sync
+  sleep 5
+  systemctl reboot
+fi
+exit 1

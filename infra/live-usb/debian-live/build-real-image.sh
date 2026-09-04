@@ -52,7 +52,7 @@ if command -v git >/dev/null 2>&1 && git -C "$repo_root" rev-parse --is-inside-w
 fi
 
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
-build_id="cyberhive-live-usb-v0.2-amd64-$stamp"
+build_id="cyberhive-live-usb-v0.3-amd64-$stamp"
 work_dir="$out_dir/$build_id.work"
 build_dir="$work_dir/debian-live"
 image_name="$build_id.iso"
@@ -88,7 +88,7 @@ write_manifest() {
   "schema": "cyberhive.live.real_build.v0",
   "status": "$status",
   "mode": "real-build",
-  "live_version": "0.2.0-dev",
+  "live_version": "0.3.0-dev",
   "source_commit": "$source_commit",
   "candidate": "debian-live",
   "candidate_path": "infra/live-usb/debian-live",
@@ -178,7 +178,6 @@ build_status='ok'
   lb build
 ) >>"$build_log_path" 2>&1 || build_status='failed'
 
-# Verify the rendered brand actually reached the GRUB tree used by EFI boot.
 if [ "$build_status" = 'ok' ]; then
   expected_grub_splash="$build_dir/config/bootloaders/grub-pc/splash.png"
   built_grub_splash="$build_dir/binary/boot/grub/splash.png"

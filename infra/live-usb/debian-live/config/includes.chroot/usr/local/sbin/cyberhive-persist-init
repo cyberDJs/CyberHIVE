@@ -1,0 +1,54 @@
+#!/bin/sh
+set -eu
+
+. /etc/cyberhive/live/config.env
+
+persist="$CYBERHIVE_PERSIST_ROOT"
+run_state="$CYBERHIVE_STATE_DIR"
+mkdir -p "$persist" "$run_state"
+
+state_dev=$(blkid -L "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
+if [ -z "$state_dev" ]; then
+  printf '%s\n' 'absent' >"$run_state/persistence-state"
+  echo "cyberhive-persist-init: $CYBERHIVE_STATE_LABEL not found" >&2
+  exit 2
+fi
+
+pk=$(lsblk -ndo PKNAME "$state_dev" 2>/dev/null | head -n 1 || true)
+[ -n "$pk" ] || { echo 'cyberhive-persist-init: cannot resolve parent disk' >&2; exit 2; }
+parent="/dev/$pk"
+transport=$(lsblk -ndo TRAN "$parent" 2>/dev/null | head -n 1 || true)
+[ "$transport" = 'usb' ] || { echo "cyberhive-persist-init: refusing non-USB persistence parent $parent" >&2; exit 2; }
+
+if ! mountpoint -q "$persist"; then
+  mount -o rw,nodev,nosuid "$state_dev" "$persist"
+fi
+
+mkdir -p \
+  "$persist/state/network" \
+  "$persist/state/tailscale" \
+  "$persist/state/ssh/host_keys" \
+  "$persist/state/ota" \
+  "$persist/state/evidence" \
+  "$persist/cache"
+chmod 0700 "$persist/state/tailscale" "$persist/state/ssh" "$persist/state/ssh/host_keys" "$persist/state/ota"
+
+bootstrap_keys=/etc/cyberhive/bootstrap/authorized_keys
+persist_keys="$persist/state/ssh/authorized_keys"
+if [ ! -s "$persist_keys" ] && [ -s "$bootstrap_keys" ]; then
+  install -m 0600 -o root -g root "$bootstrap_keys" "$persist_keys"
+fi
+
+if [ -d "$persist/state/network" ]; then
+  install -d -m 0700 /etc/NetworkManager/system-connections
+  find "$persist/state/network" -maxdepth 1 -type f -name '*.nmconnection' -exec cp -p '{}' /etc/NetworkManager/system-connections/ \;
+  chmod 0600 /etc/NetworkManager/system-connections/*.nmconnection 2>/dev/null || true
+fi
+
+install -d -m 0700 /var/lib/tailscale
+if ! mountpoint -q /var/lib/tailscale; then
+  mount --bind "$persist/state/tailscale" /var/lib/tailscale
+fi
+
+printf 'mounted:%s:%s\n' "$state_dev" "$parent" >"$run_state/persistence-state"
+chmod 0640 "$run_state/persistence-state"

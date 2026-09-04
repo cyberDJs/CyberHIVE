@@ -53,6 +53,12 @@ jobs:
       - name: Validate real image build gate scope
         shell: sh
         run: sh scripts/validate-live-usb-real-image-build-gate.sh
+      - name: Validate v0.3 unattended image scope when present
+        shell: sh
+        run: |
+          if test -f scripts/validate-live-appliance-v0-3.sh; then
+            sh scripts/validate-live-appliance-v0-3.sh
+          fi
 
   approved-real-image-build:
     if: >-
@@ -79,7 +85,11 @@ jobs:
           printf 'approved_head=%s\n' "$actual_head"
       - name: Validate gate before build
         shell: sh
-        run: sh scripts/validate-live-usb-real-image-build-gate.sh
+        run: |
+          sh scripts/validate-live-usb-real-image-build-gate.sh
+          if test -f scripts/validate-live-appliance-v0-3.sh; then
+            sh scripts/validate-live-appliance-v0-3.sh
+          fi
       - name: Run approved image-only build
         env:
           CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL: BUILD_IMAGE_ONLY_NO_USB
@@ -93,7 +103,7 @@ jobs:
             --env CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL \
             --env CYBERHIVE_REAL_IMAGE_BUILDER_LABEL \
             debian:bookworm-slim \
-            sh -c 'apt-get update && apt-get install -y --no-install-recommends live-build ca-certificates git rsync xorriso isolinux syslinux-common squashfs-tools librsvg2-bin fonts-dejavu-core && git config --global --add safe.directory /workspace && sh infra/live-usb/debian-live/build-real-image.sh'
+            sh -c 'apt-get update && apt-get install -y --no-install-recommends live-build ca-certificates git rsync xorriso isolinux syslinux-common squashfs-tools librsvg2-bin fonts-dejavu-core gdisk grub-efi-amd64-bin dosfstools mtools e2fsprogs gzip && git config --global --add safe.directory /workspace && sh infra/live-usb/debian-live/build-real-image.sh && sh infra/live-usb/debian-live/build-unattended-disk-image.sh'
       - name: Upload exact-head build evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -101,6 +111,8 @@ jobs:
           name: cyberhive-real-build-pr${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}-run${{ github.run_id }}
           path: |
             .cyberhive-live-real-build/*.iso
+            .cyberhive-live-real-build/*.img.gz
+            .cyberhive-live-real-build/*.slot.tar
             .cyberhive-live-real-build/*.sha256
             .cyberhive-live-real-build/*.manifest.json
             .cyberhive-live-real-build/*.build-log.txt

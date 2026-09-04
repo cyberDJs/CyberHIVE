@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+. /etc/cyberhive/live/config.env
+[ -n "$CYBERHIVE_OTA_CHANNEL_URL" ] || exit 0
+if ! curl -fsI --proto '=https' --proto-redir '=https' --tlsv1.2 "$CYBERHIVE_OTA_CHANNEL_URL" >/dev/null 2>&1; then
+  exit 0
+fi
+exec /usr/local/sbin/cyberhive-update --manifest "$CYBERHIVE_OTA_CHANNEL_URL" --reboot

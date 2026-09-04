@@ -1,0 +1,13 @@
+[Unit]
+Description=CyberHIVE persistent USB state bootstrap
+Wants=systemd-udev-settle.service
+After=systemd-udev-settle.service local-fs.target
+Before=NetworkManager.service tailscaled.service cyberhive-onboarding-init.service ssh.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cyberhive-persist-init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

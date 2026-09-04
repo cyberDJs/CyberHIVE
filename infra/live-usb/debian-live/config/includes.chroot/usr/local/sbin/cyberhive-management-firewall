@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+apply_rule() {
+  bin=$1
+  if ! command -v "$bin" >/dev/null 2>&1; then return 0; fi
+  if "$bin" -C INPUT '!' -i tailscale0 -p tcp -m multiport --dports 22,80 -j DROP >/dev/null 2>&1; then
+    return 0
+  fi
+  "$bin" -I INPUT 1 '!' -i tailscale0 -p tcp -m multiport --dports 22,80 -j DROP
+}
+
+apply_rule iptables
+apply_rule ip6tables

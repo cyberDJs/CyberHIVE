@@ -1,0 +1,12 @@
+[Unit]
+Description=CyberHIVE signed DEV channel periodic update timer
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=30min
+RandomizedDelaySec=3min
+Persistent=false
+Unit=cyberhive-update-check.service
+
+[Install]
+WantedBy=timers.target
