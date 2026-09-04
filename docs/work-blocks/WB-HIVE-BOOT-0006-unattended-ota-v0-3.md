@@ -30,7 +30,7 @@ Turn the physically proven v0.2 live appliance into a development node that can 
 
 ## First bootstrap
 
-The v0.3 raw disk image contains `CYBERHIVE_EFI`, `CYBERHIVE_A`, `CYBERHIVE_B` and `CYBERHIVE_STATE`. Initial runtime is slot A. The first local tty1 login invokes `cyberhive-firstboot`, which asks for Wi-Fi credentials with echo disabled and then performs an interactive Tailscale enrollment. No Wi-Fi password or Tailscale private machine state is committed to Git.
+The v0.3 raw disk image contains `CYBER_EFI`, `CYBERHIVE_A`, `CYBERHIVE_B` and `CYBERHIVE_STATE`. Initial runtime is slot A. The first local tty1 login invokes `cyberhive-firstboot`, which asks for Wi-Fi credentials with echo disabled and then performs an interactive Tailscale enrollment. No Wi-Fi password or Tailscale private machine state is committed to Git.
 
 A bootstrap SSH public key is included so the owner can reach the node as soon as Tailscale is enrolled. Additional operator keys are added later to the persistent `state/ssh/authorized_keys` file without another USB rewrite.
 

@@ -13,6 +13,7 @@ done
 
 script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
 repo_root=$(CDPATH= cd "$script_dir/../../.." && pwd)
+. "$script_dir/config/includes.chroot/etc/cyberhive/live/config.env"
 out_dir="$repo_root/.cyberhive-live-real-build"
 source_commit='UNKNOWN'
 if command -v git >/dev/null 2>&1 && git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -155,10 +156,10 @@ grub-editenv "$work/grubenv" set current_slot=A
 
 truncate -s 6G "$raw"
 sgdisk --clear \
-  --new=1:2048:+256M  --typecode=1:EF00 --change-name=1:CYBERHIVE_EFI \
-  --new=2:0:+1536M    --typecode=2:8300 --change-name=2:CYBERHIVE_A \
-  --new=3:0:+1536M    --typecode=3:8300 --change-name=3:CYBERHIVE_B \
-  --new=4:0:0         --typecode=4:8300 --change-name=4:CYBERHIVE_STATE \
+  --new=1:2048:+256M  --typecode=1:EF00 --change-name=1:"$CYBERHIVE_EFI_LABEL" \
+  --new=2:0:+1536M    --typecode=2:8300 --change-name=2:"$CYBERHIVE_SLOT_A_LABEL" \
+  --new=3:0:+1536M    --typecode=3:8300 --change-name=3:"$CYBERHIVE_SLOT_B_LABEL" \
+  --new=4:0:0         --typecode=4:8300 --change-name=4:"$CYBERHIVE_STATE_LABEL" \
   "$raw" >>"$log" 2>&1
 
 part_info() {
@@ -171,17 +172,17 @@ set -- $(part_info 3); p3_start=$1; p3_sectors=$2
 set -- $(part_info 4); p4_start=$1; p4_sectors=$2
 
 truncate -s $((p1_sectors * 512)) "$work/efi.fs"
-mkfs.vfat -F 32 -n CYBERHIVE_EFI "$work/efi.fs" >>"$log" 2>&1
+mkfs.vfat -F 32 -n "$CYBERHIVE_EFI_LABEL" "$work/efi.fs" >>"$log" 2>&1
 mmd -i "$work/efi.fs" ::/EFI ::/EFI/BOOT ::/cyberhive
 mcopy -i "$work/efi.fs" "$work/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
 mcopy -i "$work/efi.fs" "$work/grubenv" ::/cyberhive/grubenv
 
 truncate -s $((p2_sectors * 512)) "$work/slot-a.fs"
-mke2fs -q -F -t ext4 -m 0 -L CYBERHIVE_A -d "$work/slot-a" "$work/slot-a.fs"
+mke2fs -q -F -t ext4 -m 0 -L "$CYBERHIVE_SLOT_A_LABEL" -d "$work/slot-a" "$work/slot-a.fs"
 truncate -s $((p3_sectors * 512)) "$work/slot-b.fs"
-mke2fs -q -F -t ext4 -m 0 -L CYBERHIVE_B -d "$work/slot-b" "$work/slot-b.fs"
+mke2fs -q -F -t ext4 -m 0 -L "$CYBERHIVE_SLOT_B_LABEL" -d "$work/slot-b" "$work/slot-b.fs"
 truncate -s $((p4_sectors * 512)) "$work/state.fs"
-mke2fs -q -F -t ext4 -m 0 -L CYBERHIVE_STATE -d "$work/state" "$work/state.fs"
+mke2fs -q -F -t ext4 -m 0 -L "$CYBERHIVE_STATE_LABEL" -d "$work/state" "$work/state.fs"
 
 dd if="$work/efi.fs" of="$raw" bs=512 seek="$p1_start" conv=notrunc,sparse status=none
 dd if="$work/slot-a.fs" of="$raw" bs=512 seek="$p2_start" conv=notrunc,sparse status=none
@@ -215,10 +216,10 @@ cat >"$manifest" <<EOMANIFEST
   "slot_bundle_filename": "$(basename "$bundle")",
   "slot_bundle_bytes": $bundle_bytes,
   "slot_bundle_sha256": "$bundle_sha",
-  "efi_label": "CYBERHIVE_EFI",
-  "slot_a_label": "CYBERHIVE_A",
-  "slot_b_label": "CYBERHIVE_B",
-  "state_label": "CYBERHIVE_STATE",
+  "efi_label": "$CYBERHIVE_EFI_LABEL",
+  "slot_a_label": "$CYBERHIVE_SLOT_A_LABEL",
+  "slot_b_label": "$CYBERHIVE_SLOT_B_LABEL",
+  "state_label": "$CYBERHIVE_STATE_LABEL",
   "initial_slot": "A",
   "usb_written": false,
   "hardware_booted": false,

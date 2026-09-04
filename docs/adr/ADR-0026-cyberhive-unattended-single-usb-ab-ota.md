@@ -13,7 +13,7 @@ Fresh review of the v0.3 implementation identified crash-consistency and unatten
 
 Use one removable USB with two trust/storage layers:
 
-1. a small stable UEFI partition labeled `CYBERHIVE_EFI`, containing a standalone GRUB loader and a writable GRUB environment block;
+1. a small stable UEFI partition labeled `CYBER_EFI`, containing a standalone GRUB loader and a writable GRUB environment block;
 2. two ext4 runtime partitions labeled `CYBERHIVE_A` and `CYBERHIVE_B`, plus a separate ext4 `CYBERHIVE_STATE` partition for persistent operator/device state.
 
 GRUB is not replaced by ordinary OTA. It boots one slot by `live-media-path`. OTA downloads a signed slot bundle into the inactive slot, verifies signature, bytes and SHA-256, and marks it pending. The bootloader gives the pending slot one attempt. Userspace health commits it; otherwise a reboot returns to the previous slot.

@@ -2,7 +2,7 @@
 
 ## Allowed persistent writes
 
-Only the removable parent disk that contains `CYBERHIVE_EFI`, `CYBERHIVE_A`, `CYBERHIVE_B` and `CYBERHIVE_STATE` is an appliance persistence/update target. Persistent writes are limited to:
+Only the removable parent disk that contains `CYBER_EFI`, `CYBERHIVE_A`, `CYBERHIVE_B` and `CYBERHIVE_STATE` is an appliance persistence/update target. Persistent writes are limited to:
 
 - `state/network/` - root-only NetworkManager profiles
 - `state/tailscale/` - Tailscale machine state

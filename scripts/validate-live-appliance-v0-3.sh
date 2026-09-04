@@ -69,10 +69,21 @@ if grep -R -n -E 'BEGIN (OPENSSH|RSA|EC|PRIVATE) KEY' "$root/etc/cyberhive" infr
 fi
 
 grep -qx 'CYBERHIVE_LIVE_VERSION="0.3.0-dev"' "$root/etc/cyberhive/live/config.env"
-grep -qx 'CYBERHIVE_EFI_LABEL="CYBERHIVE_EFI"' "$root/etc/cyberhive/live/config.env"
+grep -qx 'CYBERHIVE_EFI_LABEL="CYBER_EFI"' "$root/etc/cyberhive/live/config.env"
 grep -qx 'CYBERHIVE_SLOT_A_LABEL="CYBERHIVE_A"' "$root/etc/cyberhive/live/config.env"
 grep -qx 'CYBERHIVE_SLOT_B_LABEL="CYBERHIVE_B"' "$root/etc/cyberhive/live/config.env"
 grep -qx 'CYBERHIVE_STATE_LABEL="CYBERHIVE_STATE"' "$root/etc/cyberhive/live/config.env"
+python3 - "$root/etc/cyberhive/live/config.env" <<'PY'
+from pathlib import Path
+import sys
+for line in Path(sys.argv[1]).read_text().splitlines():
+    if line.startswith('CYBERHIVE_EFI_LABEL='):
+        label = line.split('=', 1)[1].strip().strip('"')
+        assert 1 <= len(label.encode('ascii')) <= 11
+        break
+else:
+    raise AssertionError('CYBERHIVE_EFI_LABEL missing')
+PY
 
 device="$root/usr/local/lib/cyberhive-device.sh"
 grep -F 'cyberhive_live_medium_device()' "$device" >/dev/null
@@ -106,6 +117,8 @@ grep -F 'bundle SHA-256 mismatch' "$update" >/dev/null
 grep -F 'refusing OTA replay/downgrade/quarantine' "$update" >/dev/null
 grep -F 'refusing previously failed OTA release' "$update" >/dev/null
 grep -F 'another CyberHIVE OTA operation is active' "$update" >/dev/null
+grep -F 'refusing OTA restage: inactive slot already armed or pending' "$update" >/dev/null
+assert_before "$update" 'refusing OTA restage: inactive slot already armed or pending' 'mount -o rw,nodev,nosuid "$target_dev" "$slot_mount"'
 grep -F 'read_sequence_file()' "$update" >/dev/null
 grep -F 'malformed persisted current-sequence; refusing OTA' "$update" >/dev/null
 grep -F 'malformed persisted failed-sequence; refusing OTA' "$update" >/dev/null
@@ -124,7 +137,8 @@ grep -F 'incomplete-commit-rollback' "$commit" >/dev/null
 grep -F 'rollback-detected' "$commit" >/dev/null
 grep -F 'quarantine_release "$state_pending_release" "$state_pending_sequence" health-gate' "$commit" >/dev/null
 grep -F 'read_sequence_file()' "$commit" >/dev/null
-grep -F 'malformed persisted current-sequence' "$commit" >/dev/null
+grep -F 'malformed persisted current-sequence; rolling back candidate' "$commit" >/dev/null
+grep -F 'quarantine_release "$state_pending_release" "$state_pending_sequence" malformed-current-sequence' "$commit" >/dev/null
 grep -F 'cyberhive-host-disk-guard >/dev/null 2>&1' "$commit" >/dev/null
 
 host_guard="$root/usr/local/bin/cyberhive-host-disk-guard"
@@ -134,6 +148,8 @@ grep -F 'cyberhive_require_usb_parent "$candidate"' "$host_guard" >/dev/null
 if grep -F 'NAME,TYPE,RM' "$host_guard"; then echo 'host-disk guard must not classify CyberHIVE by RM alone' >&2; exit 1; fi
 
 builder='infra/live-usb/debian-live/build-unattended-disk-image.sh'
+grep -F '. "$script_dir/config/includes.chroot/etc/cyberhive/live/config.env"' "$builder" >/dev/null
+grep -F 'mkfs.vfat -F 32 -n "$CYBERHIVE_EFI_LABEL"' "$builder" >/dev/null
 grep -F 'regexp --set=1:boot_disk' "$builder" >/dev/null
 grep -F 'set efi="$boot_disk,gpt1"' "$builder" >/dev/null
 grep -F 'set slotdev="$boot_disk,gpt2"' "$builder" >/dev/null
@@ -153,24 +169,66 @@ assert_before "$firewall" '--dport 80 -j DROP' 'for net in 127.0.0.0/8'
 web="$root/usr/local/bin/cyberhive-web"
 grep -F 'CSRF_TOKEN = secrets.token_urlsafe' "$web" >/dev/null
 grep -F 'def require_mutation_auth' "$web" >/dev/null
+grep -F 'def trusted_management_host' "$web" >/dev/null
+grep -F 'def trusted_management_request' "$web" >/dev/null
+grep -F 'TRUSTED_TAILSCALE_NAMES' "$web" >/dev/null
+grep -F "host.startswith(f'{name}.') and host.endswith('.ts.net')" "$web" >/dev/null
+grep -F "headers.get('Host'" "$web" >/dev/null
+grep -F "headers.get('Origin'" "$web" >/dev/null
+grep -F 'trusted management Host/Origin required' "$web" >/dev/null
 grep -F "self.headers.get('X-CyberHIVE-CSRF'" "$web" >/dev/null
 grep -F "'X-CyberHIVE-CSRF':csrf" "$web" >/dev/null
 python3 - "$web" <<'PY'
 from pathlib import Path
 import sys
 src = Path(sys.argv[1]).read_text()
+assert "return host in TRUSTED_HOST_NAMES or host.endswith('.ts.net')" not in src
+for route in ("def do_GET(self):", "def do_POST(self):"):
+    block = src[src.index(route):src.index("if self.path ==", src.index(route))]
+    assert 'require_management_request' in block
 for route, end in [("if self.path == '/api/role':", "if self.path == '/api/support':"), ("if self.path == '/api/support':", "self.send_json(HTTPStatus.NOT_FOUND")]:
     block = src[src.index(route):src.index(end, src.index(route)+1)]
     assert 'require_mutation_auth' in block
+session = src[src.index("if self.path == '/api/session':"):src.index("if self.path == '/api/support-download':")]
+assert 'require_management_request' in session
+assert "payload['csrf'] = CSRF_TOKEN" in session
 for route, end in [("if self.path == '/api/health':", "if self.path == '/api/inventory':"), ("if self.path == '/api/inventory':", "if self.path == '/api/session':")]:
     block = src[src.index(route):src.index(end, src.index(route)+1)]
     assert 'require_pairing' in block
+PY
+python3 - "$web" <<'PY'
+import importlib.machinery
+import importlib.util
+import os
+import sys
+import unittest.mock
+
+os.environ['CYBERHIVE_TAILSCALE_HOSTNAME'] = 'cyberhive-dev-01'
+loader = importlib.machinery.SourceFileLoader('cyberhive_web_under_test', sys.argv[1])
+spec = importlib.util.spec_from_loader(loader.name, loader)
+module = importlib.util.module_from_spec(spec)
+with unittest.mock.patch('pathlib.Path.mkdir'), \
+     unittest.mock.patch('pathlib.Path.write_text'), \
+     unittest.mock.patch('os.chmod'):
+    loader.exec_module(module)
+
+class Headers(dict):
+    def get(self, key, default=None):
+        return super().get(key, default)
+
+assert module.trusted_management_host('cyberhive-dev-01.tailnet.ts.net')
+assert not module.trusted_management_host('evil.tailnet.ts.net')
+assert module.trusted_management_request(Headers(Host='100.64.0.10'))
+assert module.trusted_management_request(Headers(Host='cyberhive.local', Origin='http://cyberhive.local'))
+assert not module.trusted_management_request(Headers(Host='attacker.example'))
+assert not module.trusted_management_request(Headers(Host='100.64.0.10', Origin='http://attacker.example'))
 PY
 
 web_unit="$root/etc/systemd/system/cyberhive-web.service"
 ssh_dropin="$root/etc/systemd/system/ssh.service.d/20-cyberhive-management-firewall.conf"
 grep -F 'Requires=cyberhive-management-firewall.service' "$web_unit" >/dev/null
 grep -F 'After=cyberhive-onboarding-init.service network-online.target cyberhive-management-firewall.service' "$web_unit" >/dev/null
+grep -F 'EnvironmentFile=/etc/cyberhive/live/config.env' "$web_unit" >/dev/null
 grep -F 'Requires=cyberhive-management-firewall.service' "$ssh_dropin" >/dev/null
 grep -F 'After=cyberhive-management-firewall.service' "$ssh_dropin" >/dev/null
 grep -qx 'iptables' infra/live-usb/debian-live/config/package-lists/cyberhive-live.list.chroot

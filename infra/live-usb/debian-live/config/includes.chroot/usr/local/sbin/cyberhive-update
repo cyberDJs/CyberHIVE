@@ -98,7 +98,18 @@ mounted_state=$(printf '%s' "$mounted_state" | sed 's/\[.*$//')
   exit 3
 }
 
-mkdir -p "$work" "$persist/state/ota"
+otadir="$persist/state/ota"
+mkdir -p "$work" "$otadir"
+if [ -s "$otadir/pending-slot" ] \
+   || [ -s "$otadir/pending-release-id" ] \
+   || [ -s "$otadir/pending-sequence" ] \
+   || [ -s "$otadir/pending-phase" ]; then
+  pending_slot=$(cat "$otadir/pending-slot" 2>/dev/null || true)
+  pending_release=$(cat "$otadir/pending-release-id" 2>/dev/null || true)
+  pending_phase=$(cat "$otadir/pending-phase" 2>/dev/null || true)
+  echo "refusing OTA restage: inactive slot already armed or pending; slot=${pending_slot:-unknown} release=${pending_release:-unknown} phase=${pending_phase:-unknown}" >&2
+  exit 4
+fi
 manifest="$work/channel.json"
 sig="$work/channel.json.sig"
 bundle="$work/slot.tar"
@@ -188,7 +199,6 @@ sync -f "$slot_mount" 2>/dev/null || sync
 umount "$slot_mount"
 slot_mounted='false'
 
-otadir="$persist/state/ota"
 atomic_copy "$manifest" "$otadir/pending-channel.json"
 atomic_copy "$sig" "$otadir/pending-channel.json.sig"
 atomic_text "$source_commit" "$otadir/pending-source-commit"

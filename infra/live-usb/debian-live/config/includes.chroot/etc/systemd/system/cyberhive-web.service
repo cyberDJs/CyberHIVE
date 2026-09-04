@@ -8,6 +8,7 @@ After=cyberhive-onboarding-init.service network-online.target cyberhive-manageme
 Type=simple
 User=cyberhive-web
 Group=cyberhive-control
+EnvironmentFile=/etc/cyberhive/live/config.env
 Environment=CYBERHIVE_WEB_PORT=80
 ExecStart=/usr/local/bin/cyberhive-web
 Restart=on-failure

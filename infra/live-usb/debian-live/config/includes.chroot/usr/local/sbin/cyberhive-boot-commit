@@ -244,8 +244,17 @@ if [ "$health_ok" = 'true' ]; then
   if [ "$candidate" = 'true' ]; then
     old_release=$(cat "$otadir/current-release-id" 2>/dev/null || true)
     old_sequence=$(read_sequence_file "$otadir/current-sequence") || {
-      echo 'CyberHIVE boot commit: malformed persisted current-sequence' >&2
-      exit 2
+      echo 'CyberHIVE boot commit: malformed persisted current-sequence; rolling back candidate' >&2
+      quarantine_release "$state_pending_release" "$state_pending_sequence" malformed-current-sequence
+      record_health fail malformed-current-sequence
+      sync
+      efi_rw
+      grub-editenv "$envfile" set 'tries=0'
+      sync
+      efi_ro
+      sleep 5
+      systemctl reboot
+      exit 1
     }
     tx_tmp="$transaction.tmp.$$"
     jq -n --arg new_slot "$current" --arg new_release_id "$state_pending_release" --argjson new_sequence "$state_pending_sequence" --arg old_release_id "$old_release" --argjson old_sequence "$old_sequence" '{schema:"cyberhive.ota.commit.v1",new_slot:$new_slot,new_release_id:$new_release_id,new_sequence:$new_sequence,old_release_id:$old_release_id,old_sequence:$old_sequence}' >"$tx_tmp"
