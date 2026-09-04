@@ -60,11 +60,16 @@ cat >"$work/slot-a/slots/A/slot.json" <<EOSLOT
 {"schema":"cyberhive.slot.v1","slot":"A","live_version":"0.3.0-dev","source_commit":"$source_commit","source_iso_sha256":"$iso_sha"}
 EOSLOT
 
+# Build the OTA bundle with exactly four regular files and no directory entries.
 cp "$work/slot-a/slots/A/vmlinuz" "$work/bundle/slot/vmlinuz"
 cp "$work/slot-a/slots/A/initrd.img" "$work/bundle/slot/initrd.img"
 cp "$work/slot-a/slots/A/live/filesystem.squashfs" "$work/bundle/slot/live/filesystem.squashfs"
 cp "$work/slot-a/slots/A/slot.json" "$work/bundle/slot/slot.json"
-tar -C "$work/bundle" -cf "$bundle" slot
+tar -C "$work/bundle" -cf "$bundle" \
+  slot/initrd.img \
+  slot/live/filesystem.squashfs \
+  slot/slot.json \
+  slot/vmlinuz
 bundle_sha=$(sha256sum "$bundle" | awk '{print $1}')
 bundle_bytes=$(wc -c <"$bundle" | tr -d ' ')
 printf '%s  %s\n' "$bundle_sha" "$(basename "$bundle")" >"$bundle_sha_file"
@@ -172,10 +177,12 @@ mke2fs -q -F -t ext4 -m 0 -L CYBERHIVE_B -d "$work/slot-b" "$work/slot-b.fs"
 truncate -s $((p4_sectors * 512)) "$work/state.fs"
 mke2fs -q -F -t ext4 -m 0 -L CYBERHIVE_STATE -d "$work/state" "$work/state.fs"
 
-dd if="$work/efi.fs" of="$raw" bs=512 seek="$p1_start" conv=notrunc status=none
-dd if="$work/slot-a.fs" of="$raw" bs=512 seek="$p2_start" conv=notrunc status=none
-dd if="$work/slot-b.fs" of="$raw" bs=512 seek="$p3_start" conv=notrunc status=none
-dd if="$work/state.fs" of="$raw" bs=512 seek="$p4_start" conv=notrunc status=none
+# Preserve sparse zero ranges in the regular-file disk image. This is still
+# image-only construction; no physical device path is named or written here.
+dd if="$work/efi.fs" of="$raw" bs=512 seek="$p1_start" conv=notrunc,sparse status=none
+dd if="$work/slot-a.fs" of="$raw" bs=512 seek="$p2_start" conv=notrunc,sparse status=none
+dd if="$work/slot-b.fs" of="$raw" bs=512 seek="$p3_start" conv=notrunc,sparse status=none
+dd if="$work/state.fs" of="$raw" bs=512 seek="$p4_start" conv=notrunc,sparse status=none
 sync
 
 raw_sha=$(sha256sum "$raw" | awk '{print $1}')
