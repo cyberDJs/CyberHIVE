@@ -49,7 +49,7 @@ done
 line_of() {
   file=$1
   text=$2
-  grep -nF "$text" "$file" | head -n 1 | cut -d: -f1
+  grep -nF -- "$text" "$file" | head -n 1 | cut -d: -f1
 }
 
 assert_before() {
