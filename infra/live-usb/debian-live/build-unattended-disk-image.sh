@@ -60,7 +60,6 @@ cat >"$work/slot-a/slots/A/slot.json" <<EOSLOT
 {"schema":"cyberhive.slot.v1","slot":"A","live_version":"0.3.0-dev","source_commit":"$source_commit","source_iso_sha256":"$iso_sha"}
 EOSLOT
 
-# Build the OTA bundle with exactly four regular files and no directory entries.
 cp "$work/slot-a/slots/A/vmlinuz" "$work/bundle/slot/vmlinuz"
 cp "$work/slot-a/slots/A/initrd.img" "$work/bundle/slot/initrd.img"
 cp "$work/slot-a/slots/A/live/filesystem.squashfs" "$work/bundle/slot/live/filesystem.squashfs"
@@ -78,12 +77,23 @@ cat >"$work/grub.cfg" <<'EOGRUB'
 insmod part_gpt
 insmod fat
 insmod ext2
-insmod search
-insmod search_label
 insmod env
 insmod linux
+insmod regexp
 
-search --no-floppy --label CYBERHIVE_EFI --set=efi
+# Bind every boot decision to the EFI device that firmware actually loaded.
+# v0.3 layout is fixed: GPT1=EFI, GPT2=A, GPT3=B, GPT4=STATE.
+set boot_disk=
+if [ -n "$cmdpath" ]; then
+  regexp --set=1:boot_disk '^\(([^,]+),gpt1\)(/.*)?$' "$cmdpath"
+fi
+if [ -z "$boot_disk" ]; then
+  echo "CyberHIVE: cannot prove boot EFI parent"
+  sleep 30
+  reboot
+fi
+
+set efi="$boot_disk,gpt1"
 set envfile=($efi)/cyberhive/grubenv
 if [ -f "$envfile" ]; then load_env -f "$envfile"; fi
 if [ -z "$current_slot" ]; then set current_slot=A; fi
@@ -106,32 +116,30 @@ if [ -n "$pending_slot" ]; then
 fi
 
 if [ "$boot_slot" = "B" ]; then
-  set slot_label=CYBERHIVE_B
+  set slotdev="$boot_disk,gpt3"
   set live_path=/slots/B/live
 else
   set boot_slot=A
-  set slot_label=CYBERHIVE_A
+  set slotdev="$boot_disk,gpt2"
   set live_path=/slots/A/live
 fi
-search --no-floppy --label $slot_label --set=slotdev
 set slotroot=($slotdev)/slots/$boot_slot
 
 if [ ! -f "$slotroot/vmlinuz" -o ! -f "$slotroot/initrd.img" -o ! -f "$slotroot/live/filesystem.squashfs" ]; then
   if [ "$boot_slot" = "A" ]; then
     set boot_slot=B
-    set slot_label=CYBERHIVE_B
+    set slotdev="$boot_disk,gpt3"
     set live_path=/slots/B/live
   else
     set boot_slot=A
-    set slot_label=CYBERHIVE_A
+    set slotdev="$boot_disk,gpt2"
     set live_path=/slots/A/live
   fi
-  search --no-floppy --label $slot_label --set=slotdev
   set slotroot=($slotdev)/slots/$boot_slot
 fi
 
 if [ ! -f "$slotroot/vmlinuz" -o ! -f "$slotroot/initrd.img" -o ! -f "$slotroot/live/filesystem.squashfs" ]; then
-  echo "CyberHIVE: no bootable A/B slot found"
+  echo "CyberHIVE: no bootable A/B slot found on boot EFI parent"
   sleep 30
   reboot
 fi
@@ -145,8 +153,6 @@ grub-mkstandalone -O x86_64-efi -o "$work/BOOTX64.EFI" "boot/grub/grub.cfg=$work
 grub-editenv "$work/grubenv" create
 grub-editenv "$work/grubenv" set current_slot=A
 
-# 6 GiB bootstrap image:
-# p1 256 MiB stable EFI, p2/p3 1536 MiB A/B slots, p4 dedicated persistent STATE.
 truncate -s 6G "$raw"
 sgdisk --clear \
   --new=1:2048:+256M  --typecode=1:EF00 --change-name=1:CYBERHIVE_EFI \
@@ -177,8 +183,6 @@ mke2fs -q -F -t ext4 -m 0 -L CYBERHIVE_B -d "$work/slot-b" "$work/slot-b.fs"
 truncate -s $((p4_sectors * 512)) "$work/state.fs"
 mke2fs -q -F -t ext4 -m 0 -L CYBERHIVE_STATE -d "$work/state" "$work/state.fs"
 
-# Preserve sparse zero ranges in the regular-file disk image. This is still
-# image-only construction; no physical device path is named or written here.
 dd if="$work/efi.fs" of="$raw" bs=512 seek="$p1_start" conv=notrunc,sparse status=none
 dd if="$work/slot-a.fs" of="$raw" bs=512 seek="$p2_start" conv=notrunc,sparse status=none
 dd if="$work/slot-b.fs" of="$raw" bs=512 seek="$p3_start" conv=notrunc,sparse status=none

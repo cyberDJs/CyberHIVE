@@ -2,6 +2,7 @@
 set -eu
 
 . /etc/cyberhive/live/config.env
+. /usr/local/lib/cyberhive-device.sh
 
 persist="$CYBERHIVE_PERSIST_ROOT"
 run_state="$CYBERHIVE_STATE_DIR"
@@ -9,8 +10,7 @@ mkdir -p "$persist" "$run_state"
 
 current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
 case "$current" in
-  A) current_label="$CYBERHIVE_SLOT_A_LABEL" ;;
-  B) current_label="$CYBERHIVE_SLOT_B_LABEL" ;;
+  A|B) ;;
   *)
     printf '%s\n' 'invalid-slot' >"$run_state/persistence-state"
     echo 'cyberhive-persist-init: current CyberHIVE slot unknown' >&2
@@ -18,33 +18,30 @@ case "$current" in
     ;;
 esac
 
-state_dev=$(blkid -L "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
-current_dev=$(blkid -L "$current_label" 2>/dev/null || true)
-efi_dev=$(blkid -L "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
-if [ -z "$state_dev" ] || [ -z "$current_dev" ] || [ -z "$efi_dev" ]; then
-  printf '%s\n' 'absent-or-incomplete' >"$run_state/persistence-state"
-  echo 'cyberhive-persist-init: STATE/current-slot/EFI labels not found' >&2
+live_dev=$(cyberhive_live_medium_device 2>/dev/null || true)
+if [ -z "$live_dev" ] || ! cyberhive_verify_live_slot "$current" "$live_dev"; then
+  printf '%s\n' 'live-medium-mismatch' >"$run_state/persistence-state"
+  echo 'cyberhive-persist-init: booted live medium does not match declared slot' >&2
+  exit 2
+fi
+parent=$(cyberhive_parent_device "$live_dev" 2>/dev/null || true)
+if [ -z "$parent" ] || ! cyberhive_require_usb_parent "$parent"; then
+  printf '%s\n' 'non-usb-parent' >"$run_state/persistence-state"
+  echo 'cyberhive-persist-init: refusing non-USB persistence parent' >&2
   exit 2
 fi
 
-state_pk=$(lsblk -ndo PKNAME "$state_dev" 2>/dev/null | head -n 1 || true)
-current_pk=$(lsblk -ndo PKNAME "$current_dev" 2>/dev/null | head -n 1 || true)
-efi_pk=$(lsblk -ndo PKNAME "$efi_dev" 2>/dev/null | head -n 1 || true)
-[ -n "$state_pk" ] && [ "$state_pk" = "$current_pk" ] && [ "$state_pk" = "$efi_pk" ] || {
-  printf '%s\n' 'parent-mismatch' >"$run_state/persistence-state"
-  echo 'cyberhive-persist-init: STATE/EFI/current-slot parent mismatch' >&2
+state_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
+efi_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
+if [ -z "$state_dev" ] || [ -z "$efi_dev" ]; then
+  printf '%s\n' 'sibling-label-missing-or-ambiguous' >"$run_state/persistence-state"
+  echo 'cyberhive-persist-init: unique STATE/EFI siblings not found on booted USB parent' >&2
   exit 2
-}
-parent="/dev/$state_pk"
-transport=$(lsblk -ndo TRAN "$parent" 2>/dev/null | head -n 1 || true)
-[ "$transport" = 'usb' ] || {
-  printf '%s\n' 'non-usb-parent' >"$run_state/persistence-state"
-  echo "cyberhive-persist-init: refusing non-USB persistence parent $parent" >&2
-  exit 2
-}
+fi
 
 if mountpoint -q "$persist"; then
   mounted_state=$(findmnt -nr -o SOURCE --target "$persist" 2>/dev/null || true)
+  mounted_state=$(printf '%s' "$mounted_state" | sed 's/\[.*$//')
   [ -n "$mounted_state" ] \
     && [ "$(readlink -f "$mounted_state" 2>/dev/null || printf '%s' "$mounted_state")" = "$(readlink -f "$state_dev" 2>/dev/null || printf '%s' "$state_dev")" ] || {
     printf '%s\n' 'mounted-state-mismatch' >"$run_state/persistence-state"

@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 . /etc/cyberhive/live/config.env
+. /usr/local/lib/cyberhive-device.sh
 
 persist="$CYBERHIVE_PERSIST_ROOT"
 mkdir -p /run/cyberhive
@@ -29,10 +30,6 @@ atomic_text() {
   printf '%s\n' "$value" >"$tmp"
   chmod 0600 "$tmp"
   mv "$tmp" "$target"
-}
-
-parent_name() {
-  lsblk -ndo PKNAME "$1" 2>/dev/null | head -n 1
 }
 
 clear_pending_state() {
@@ -74,37 +71,30 @@ efi_ro() {
 }
 
 current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
-case "$current" in
-  A) current_label="$CYBERHIVE_SLOT_A_LABEL" ;;
-  B) current_label="$CYBERHIVE_SLOT_B_LABEL" ;;
-  *) echo 'CyberHIVE boot commit: current slot unknown' >&2; exit 2 ;;
-esac
+case "$current" in A|B) ;; *) echo 'CyberHIVE boot commit: current slot unknown' >&2; exit 2 ;; esac
 
-current_dev=$(blkid -L "$current_label" 2>/dev/null || true)
-efi_dev=$(blkid -L "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
-[ -n "$current_dev" ] && [ -n "$efi_dev" ] || {
-  echo 'CyberHIVE boot commit: current slot or EFI label not found' >&2
+live_dev=$(cyberhive_live_medium_device 2>/dev/null || true)
+[ -n "$live_dev" ] && cyberhive_verify_live_slot "$current" "$live_dev" || {
+  echo 'CyberHIVE boot commit: booted live medium does not match declared slot' >&2
   exit 2
 }
-current_pk=$(parent_name "$current_dev")
-efi_pk=$(parent_name "$efi_dev")
-[ -n "$current_pk" ] && [ "$current_pk" = "$efi_pk" ] || {
-  echo 'CyberHIVE boot commit: EFI/current-slot parent mismatch' >&2
+parent=$(cyberhive_parent_device "$live_dev" 2>/dev/null || true)
+[ -n "$parent" ] && cyberhive_require_usb_parent "$parent" || {
+  echo 'CyberHIVE boot commit: refusing non-USB boot parent' >&2
   exit 2
 }
-parent="/dev/$current_pk"
-[ "$(lsblk -ndo TRAN "$parent" 2>/dev/null | head -n 1)" = 'usb' ] || {
-  echo 'CyberHIVE boot commit: refusing non-USB EFI/current-slot parent' >&2
+efi_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
+[ -n "$efi_dev" ] || {
+  echo 'CyberHIVE boot commit: unique EFI sibling not found on booted USB parent' >&2
   exit 2
 }
 
 state_available='false'
-state_dev=$(blkid -L "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
+state_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
 if mountpoint -q "$persist" && [ -n "$state_dev" ]; then
-  state_pk=$(parent_name "$state_dev")
   mounted_state=$(findmnt -nr -o SOURCE --target "$persist" 2>/dev/null || true)
-  if [ -n "$state_pk" ] && [ "$state_pk" = "$current_pk" ] \
-     && [ -n "$mounted_state" ] \
+  mounted_state=$(printf '%s' "$mounted_state" | sed 's/\[.*$//')
+  if [ -n "$mounted_state" ] \
      && [ "$(readlink -f "$mounted_state" 2>/dev/null || printf '%s' "$mounted_state")" = "$(readlink -f "$state_dev" 2>/dev/null || printf '%s' "$state_dev")" ]; then
     state_available='true'
   else
@@ -113,7 +103,6 @@ if mountpoint -q "$persist" && [ -n "$state_dev" ]; then
   fi
 fi
 
-# EFI is mounted read-only first. No writable EFI access occurs before the USB parent is verified.
 mkdir -p "$efi_mount"
 mount -o ro,nodev,nosuid,noexec "$efi_dev" "$efi_mount"
 efi_mounted='true'
@@ -122,8 +111,6 @@ envfile="$efi_mount/cyberhive/grubenv"
 pending=$(grub-editenv "$envfile" list | sed -n 's/^pending_slot=//p' | head -n 1)
 pending_release=$(grub-editenv "$envfile" list | sed -n 's/^pending_release_id=//p' | head -n 1)
 
-# If the candidate lost STATE, force the next reboot so GRUB can consume its rollback path.
-# No persistent or EFI write is attempted because STATE identity is unavailable.
 if [ "$state_available" != 'true' ]; then
   if [ "$pending" = "$current" ]; then
     echo 'CyberHIVE candidate persistence unavailable; rebooting for automatic rollback' >&2
@@ -138,12 +125,8 @@ otadir="$persist/state/ota"
 mkdir -p "$persist/state/evidence" "$otadir"
 transaction="$otadir/commit-transaction.json"
 
-# Recover a power loss that happened while committing across STATE and EFI.
 if [ -f "$transaction" ]; then
-  jq -e '.schema == "cyberhive.ota.commit.v1"' "$transaction" >/dev/null 2>&1 || {
-    echo 'CyberHIVE boot commit: invalid commit transaction schema' >&2
-    exit 2
-  }
+  jq -e '.schema == "cyberhive.ota.commit.v1"' "$transaction" >/dev/null 2>&1 || { echo 'CyberHIVE boot commit: invalid commit transaction schema' >&2; exit 2; }
   tx_new_slot=$(jq -r '.new_slot' "$transaction")
   tx_new_release=$(jq -r '.new_release_id' "$transaction")
   tx_new_sequence=$(jq -r '.new_sequence' "$transaction")
@@ -179,15 +162,12 @@ if [ -f "$transaction" ]; then
   rm -f "$transaction"
   record_health pass recovered-previous-slot
   sync
-  # Continue normal health verification on the recovered previous slot.
 fi
 
 state_pending_slot=$(cat "$otadir/pending-slot" 2>/dev/null || true)
 state_pending_release=$(cat "$otadir/pending-release-id" 2>/dev/null || true)
 state_pending_sequence=$(cat "$otadir/pending-sequence" 2>/dev/null || true)
 
-# GRUB clearing pending state without a STATE commit means a rollback occurred.
-# Quarantine that candidate so the periodic updater cannot create a reboot loop.
 if [ -n "$state_pending_release" ] && [ "$pending" != "$state_pending_slot" ]; then
   if [ "$current" != "$state_pending_slot" ]; then
     quarantine_release "$state_pending_release" "$state_pending_sequence" rollback-detected
@@ -254,19 +234,11 @@ if [ "$health_ok" = 'true' ]; then
     old_sequence=$(cat "$otadir/current-sequence" 2>/dev/null || printf '0')
     case "$old_sequence" in *[!0-9]*|'') old_sequence=0 ;; esac
     tx_tmp="$transaction.tmp.$$"
-    jq -n \
-      --arg new_slot "$current" \
-      --arg new_release_id "$state_pending_release" \
-      --argjson new_sequence "$state_pending_sequence" \
-      --arg old_release_id "$old_release" \
-      --argjson old_sequence "$old_sequence" \
-      '{schema:"cyberhive.ota.commit.v1",new_slot:$new_slot,new_release_id:$new_release_id,new_sequence:$new_sequence,old_release_id:$old_release_id,old_sequence:$old_sequence}' \
-      >"$tx_tmp"
+    jq -n --arg new_slot "$current" --arg new_release_id "$state_pending_release" --argjson new_sequence "$state_pending_sequence" --arg old_release_id "$old_release" --argjson old_sequence "$old_sequence" '{schema:"cyberhive.ota.commit.v1",new_slot:$new_slot,new_release_id:$new_release_id,new_sequence:$new_sequence,old_release_id:$old_release_id,old_sequence:$old_sequence}' >"$tx_tmp"
     chmod 0600 "$tx_tmp"
     mv "$tx_tmp" "$transaction"
     sync
 
-    # Anti-downgrade state is durable before pending boot state is cleared in EFI.
     atomic_text "$state_pending_release" "$otadir/current-release-id"
     atomic_text "$state_pending_sequence" "$otadir/current-sequence"
     sync

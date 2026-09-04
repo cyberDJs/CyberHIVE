@@ -118,8 +118,12 @@ if grep -n -E '(^|[[:space:]])(dd|mkfs|wipefs|parted|fdisk)([[:space:]]|$)' "$gu
   exit 1
 fi
 if grep -F 'allowed_parent' "$guard" >/dev/null; then
-  grep -F 'TRAN "$candidate"' "$guard" >/dev/null
-  grep -F 'fully validated CyberHIVE USB parent' "$guard" >/dev/null
+  if grep -F '. /usr/local/lib/cyberhive-device.sh' "$guard" >/dev/null; then
+    grep -F 'cyberhive_live_medium_device' "$guard" >/dev/null
+    grep -F 'cyberhive_require_usb_parent "$candidate"' "$guard" >/dev/null
+  else
+    grep -F 'TRAN "$candidate"' "$guard" >/dev/null
+  fi
 else
   grep -F 'RM 2>/dev/null' "$guard" >/dev/null
 fi

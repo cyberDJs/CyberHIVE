@@ -2,6 +2,7 @@
 set -eu
 
 . /etc/cyberhive/live/config.env
+. /usr/local/lib/cyberhive-device.sh
 
 manifest_url=''
 do_reboot='false'
@@ -54,10 +55,6 @@ atomic_copy() {
   mv "$tmp" "$target"
 }
 
-parent_name() {
-  lsblk -ndo PKNAME "$1" 2>/dev/null | head -n 1
-}
-
 current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
 case "$current" in
   A) inactive=B; inactive_label="$CYBERHIVE_SLOT_B_LABEL" ;;
@@ -65,28 +62,25 @@ case "$current" in
   *) echo 'current slot unknown' >&2; exit 3 ;;
 esac
 
-state_dev=$(blkid -L "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
-efi_dev=$(blkid -L "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
-target_dev=$(blkid -L "$inactive_label" 2>/dev/null || true)
-current_dev=$(blkid -L "$( [ "$current" = A ] && printf '%s' "$CYBERHIVE_SLOT_A_LABEL" || printf '%s' "$CYBERHIVE_SLOT_B_LABEL" )" 2>/dev/null || true)
-[ -n "$state_dev" ] && [ -n "$efi_dev" ] && [ -n "$target_dev" ] && [ -n "$current_dev" ] || {
-  echo 'CyberHIVE STATE/EFI/A/B labels not found' >&2
+live_dev=$(cyberhive_live_medium_device 2>/dev/null || true)
+[ -n "$live_dev" ] && cyberhive_verify_live_slot "$current" "$live_dev" || {
+  echo 'booted live medium does not match declared slot' >&2
   exit 3
 }
-state_pk=$(parent_name "$state_dev")
-efi_pk=$(parent_name "$efi_dev")
-target_pk=$(parent_name "$target_dev")
-current_pk=$(parent_name "$current_dev")
-[ -n "$state_pk" ] && [ "$state_pk" = "$efi_pk" ] && [ "$state_pk" = "$target_pk" ] && [ "$state_pk" = "$current_pk" ] || {
-  echo 'STATE/EFI/A/B parent mismatch' >&2
+parent=$(cyberhive_parent_device "$live_dev" 2>/dev/null || true)
+[ -n "$parent" ] && cyberhive_require_usb_parent "$parent" || {
+  echo 'refusing OTA on non-USB boot parent' >&2
   exit 3
 }
-parent="/dev/$state_pk"
-[ "$(lsblk -ndo TRAN "$parent" 2>/dev/null | head -n 1)" = 'usb' ] || {
-  echo 'refusing OTA on non-USB parent' >&2
+state_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
+efi_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
+target_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$inactive_label" 2>/dev/null || true)
+[ -n "$state_dev" ] && [ -n "$efi_dev" ] && [ -n "$target_dev" ] || {
+  echo 'unique STATE/EFI/inactive-slot siblings not found on booted USB parent' >&2
   exit 3
 }
 mounted_state=$(findmnt -nr -o SOURCE --target "$persist" 2>/dev/null || true)
+mounted_state=$(printf '%s' "$mounted_state" | sed 's/\[.*$//')
 [ -n "$mounted_state" ] \
   && [ "$(readlink -f "$mounted_state" 2>/dev/null || printf '%s' "$mounted_state")" = "$(readlink -f "$state_dev" 2>/dev/null || printf '%s' "$state_dev")" ] || {
   echo 'mounted STATE identity mismatch' >&2
@@ -179,7 +173,6 @@ sync -f "$slot_mount" 2>/dev/null || sync
 umount "$slot_mount"
 slot_mounted='false'
 
-# Persist the complete pending transaction before making the candidate bootable.
 otadir="$persist/state/ota"
 atomic_copy "$manifest" "$otadir/pending-channel.json"
 atomic_copy "$sig" "$otadir/pending-channel.json.sig"

@@ -25,10 +25,11 @@ TAILNETS = (ipaddress.ip_network('100.64.0.0/10'), ipaddress.ip_network('fd7a:11
 CONTROL.mkdir(parents=True, exist_ok=True)
 EVIDENCE.mkdir(parents=True, exist_ok=True)
 SESSION_TOKEN = secrets.token_urlsafe(32)
+CSRF_TOKEN = secrets.token_urlsafe(32)
 TOKEN_FILE.write_text(SESSION_TOKEN + '\n', encoding='utf-8')
 os.chmod(TOKEN_FILE, 0o600)
 
-HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CyberHIVE v0.3</title><style>body{background:#05080d;color:#e7f7fb;font:15px system-ui;max-width:980px;margin:auto;padding:30px}h1{color:#5ff6ff}section{border:1px solid #163945;border-radius:12px;padding:16px;margin:12px 0}button,input,select{background:#0d2028;color:#e7f7fb;border:1px solid #245765;border-radius:7px;padding:9px}pre{white-space:pre-wrap;word-break:break-word}.muted{color:#85a7b1}</style></head><body><h1>CYBERDJS / CyberHIVE v0.3</h1><section><b>Management auth:</b> <span id="auth">checking</span><div class="muted">Tailnet peers are authenticated by the private management network. Physical-console pairing remains a fallback.</div><div id="pair"><input id="code" maxlength="6" placeholder="local pair code"><button onclick="pair()">Pair fallback</button></div></section><section><b>Role intent:</b> <select id="role"><option>controller-worker</option><option>worker</option><option>devbridge-request</option><option>offline-diagnostics</option><option>rescue</option></select> <button onclick="setRole()">Set</button></section><section><button onclick="support()">Build support bundle</button> <a id="download" hidden href="/api/support-download">download</a><span id="support"></span></section><section><pre id="health">loading</pre></section><script>async function req(p,o){let r=await fetch(p,o),t=await r.text(),d;try{d=JSON.parse(t)}catch{d={error:t}}if(!r.ok)throw Error(d.error||r.statusText);return d}async function refresh(){try{let h=await req('/api/health'),s=await req('/api/session');health.textContent=JSON.stringify(h,null,2);auth.textContent=s.auth;role.value=s.role||'controller-worker';pair.hidden=s.auth==='tailnet'}catch(e){health.textContent=e.message}}async function pair(){try{await req('/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code.value})});code.value='';refresh()}catch(e){auth.textContent=e.message}}async function setRole(){try{await req('/api/role',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:role.value})});refresh()}catch(e){alert(e.message)}}async function support(){try{let d=await req('/api/support',{method:'POST'});support.textContent=' '+d.bundle;download.hidden=false}catch(e){support.textContent=' '+e.message}}refresh();setInterval(refresh,10000)</script></body></html>'''
+HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CyberHIVE v0.3</title><style>body{background:#05080d;color:#e7f7fb;font:15px system-ui;max-width:980px;margin:auto;padding:30px}h1{color:#5ff6ff}section{border:1px solid #163945;border-radius:12px;padding:16px;margin:12px 0}button,input,select{background:#0d2028;color:#e7f7fb;border:1px solid #245765;border-radius:7px;padding:9px}pre{white-space:pre-wrap;word-break:break-word}.muted{color:#85a7b1}</style></head><body><h1>CYBERDJS / CyberHIVE v0.3</h1><section><b>Management auth:</b> <span id="auth">checking</span><div class="muted">Tailnet peers are authenticated by the private management network. Physical-console pairing remains a fallback.</div><div id="pair"><input id="code" maxlength="6" placeholder="local pair code"><button onclick="pair()">Pair fallback</button></div></section><section><b>Role intent:</b> <select id="role"><option>controller-worker</option><option>worker</option><option>devbridge-request</option><option>offline-diagnostics</option><option>rescue</option></select> <button onclick="setRole()">Set</button></section><section><button onclick="support()">Build support bundle</button> <a id="download" hidden href="/api/support-download">download</a><span id="support"></span></section><section><pre id="health">loading</pre></section><script>let csrf='';async function req(p,o){let r=await fetch(p,o),t=await r.text(),d;try{d=JSON.parse(t)}catch{d={error:t}}if(!r.ok)throw Error(d.error||r.statusText);return d}async function refresh(){try{let s=await req('/api/session');auth.textContent=s.auth;role.value=s.role||'controller-worker';pair.hidden=s.auth==='tailnet';csrf=s.csrf||'';if(s.paired){let h=await req('/api/health');health.textContent=JSON.stringify(h,null,2)}else{health.textContent='pair locally or connect through Tailscale to view health'}}catch(e){health.textContent=e.message}}async function pair(){try{await req('/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code.value})});code.value='';refresh()}catch(e){auth.textContent=e.message}}async function setRole(){try{await req('/api/role',{method:'POST',headers:{'Content-Type':'application/json','X-CyberHIVE-CSRF':csrf},body:JSON.stringify({role:role.value})});refresh()}catch(e){alert(e.message)}}async function support(){try{let d=await req('/api/support',{method:'POST',headers:{'X-CyberHIVE-CSRF':csrf}});support.textContent=' '+d.bundle;download.hidden=false}catch(e){support.textContent=' '+e.message}}refresh();setInterval(refresh,10000)</script></body></html>'''
 
 def run_json(argv):
     proc = subprocess.run(argv, capture_output=True, text=True, timeout=8, check=False)
@@ -88,7 +89,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(HTTPStatus.UNAUTHORIZED, {'error': 'tailnet identity or local pairing required'})
         return False
 
+    def require_mutation_auth(self):
+        if not self.require_pairing():
+            return False
+        supplied = self.headers.get('X-CyberHIVE-CSRF', '')
+        if not supplied or not hmac.compare_digest(supplied, CSRF_TOKEN):
+            self.send_json(HTTPStatus.FORBIDDEN, {'error': 'request-bound CSRF credential required'})
+            return False
+        return True
+
     def read_json_body(self):
+        content_type = self.headers.get('Content-Type', '').split(';', 1)[0].strip().lower()
+        if content_type != 'application/json':
+            raise ValueError('application/json required')
         length = int(self.headers.get('Content-Length', '0') or '0')
         if length < 0 or length > 4096:
             raise ValueError('request body too large')
@@ -112,7 +125,10 @@ class Handler(BaseHTTPRequestHandler):
             mode_file = STATE / 'ssh-mode'
             mode = mode_file.read_text().strip() if mode_file.exists() else 'initializing'
             auth = 'tailnet' if self.is_tailnet_peer() else ('paired' if self.is_paired() else 'unpaired')
-            self.send_json(HTTPStatus.OK, {'paired': self.is_paired(), 'auth': auth, 'role': role, 'ssh_auth_mode': mode, 'remote_help': 'disabled'}); return
+            payload = {'paired': self.is_paired(), 'auth': auth, 'role': role, 'ssh_auth_mode': mode, 'remote_help': 'disabled'}
+            if self.is_paired():
+                payload['csrf'] = CSRF_TOKEN
+            self.send_json(HTTPStatus.OK, payload); return
         if self.path == '/api/support-download':
             if not self.require_pairing(): return
             bundles = sorted(EVIDENCE.glob('support-*.tar.gz'), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -141,7 +157,7 @@ class Handler(BaseHTTPRequestHandler):
             ATTEMPTS.pop(peer, None)
             self.send_json(HTTPStatus.OK, {'paired': True}, {'Set-Cookie': f'cyberhive_session={SESSION_TOKEN}; HttpOnly; SameSite=Strict; Path=/'}); return
         if self.path == '/api/role':
-            if not self.require_pairing(): return
+            if not self.require_mutation_auth(): return
             try: role = str(self.read_json_body().get('role', ''))
             except Exception:
                 self.send_json(HTTPStatus.BAD_REQUEST, {'error': 'invalid role request'}); return
@@ -150,7 +166,7 @@ class Handler(BaseHTTPRequestHandler):
             ROLE_FILE.write_text(role + '\n', encoding='utf-8')
             self.send_json(HTTPStatus.OK, {'role': role, 'effect': 'boot-session intent only'}); return
         if self.path == '/api/support':
-            if not self.require_pairing(): return
+            if not self.require_mutation_auth(): return
             proc = subprocess.run(['/usr/local/bin/cyberhive-support-bundle'], capture_output=True, text=True, timeout=20, check=False)
             if proc.returncode != 0:
                 self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {'error': proc.stderr.strip() or 'support bundle failed'}); return
