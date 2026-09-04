@@ -78,8 +78,12 @@ grep -qx 'CYBERHIVE_SLOT_B_LABEL="CYBERHIVE_B"' "$root/etc/cyberhive/live/config
 grep -qx 'CYBERHIVE_STATE_LABEL="CYBERHIVE_STATE"' "$root/etc/cyberhive/live/config.env"
 grep -F 'cyberhive-dev-channel/channel.json' "$root/etc/cyberhive/live/config.env" >/dev/null
 
-grep -F 'refusing non-USB persistence parent' "$root/usr/local/sbin/cyberhive-persist-init" >/dev/null
-grep -F 'mount --bind "$persist/state/tailscale" /var/lib/tailscale' "$root/usr/local/sbin/cyberhive-persist-init" >/dev/null
+persist_init="$root/usr/local/sbin/cyberhive-persist-init"
+grep -F 'refusing non-USB persistence parent' "$persist_init" >/dev/null
+grep -F 'STATE/EFI/current-slot parent mismatch' "$persist_init" >/dev/null
+grep -F 'mounted STATE identity mismatch' "$persist_init" >/dev/null
+assert_before "$persist_init" 'STATE/EFI/current-slot parent mismatch' 'mount -o rw,nodev,nosuid "$state_dev" "$persist"'
+grep -F 'mount --bind "$persist/state/tailscale" /var/lib/tailscale' "$persist_init" >/dev/null
 grep -F 'state/network' "$root/usr/local/sbin/cyberhive-firstboot" >/dev/null
 grep -F 'tailscale up --hostname=' "$root/usr/local/sbin/cyberhive-firstboot" >/dev/null
 grep -F "^wifi:connected$" "$root/usr/local/sbin/cyberhive-firstboot" >/dev/null || grep -F "'^wifi:connected$'" "$root/usr/local/sbin/cyberhive-firstboot" >/dev/null
@@ -157,8 +161,18 @@ assert_before "$firewall" "--dport 80 -j DROP" 'for net in 127.0.0.0/8'
 grep -F 'PasswordAuthentication no' "$root/usr/local/sbin/cyberhive-onboarding-init" >/dev/null
 grep -F 'key-persistent' "$root/usr/local/sbin/cyberhive-onboarding-init" >/dev/null
 grep -F 'state/ssh/host_keys' "$root/usr/local/sbin/cyberhive-onboarding-init" >/dev/null
-grep -F "ipaddress.ip_network('100.64.0.0/10')" "$root/usr/local/bin/cyberhive-web" >/dev/null
-grep -F 'def is_tailnet_peer' "$root/usr/local/bin/cyberhive-web" >/dev/null
+web="$root/usr/local/bin/cyberhive-web"
+grep -F "ipaddress.ip_network('100.64.0.0/10')" "$web" >/dev/null
+grep -F 'def is_tailnet_peer' "$web" >/dev/null
+python3 - "$web" <<'PY'
+from pathlib import Path
+import sys
+src = Path(sys.argv[1]).read_text()
+health = src[src.index("if self.path == '/api/health':"):src.index("if self.path == '/api/inventory':")]
+inventory = src[src.index("if self.path == '/api/inventory':"):src.index("if self.path == '/api/session':")]
+assert 'if not self.require_pairing(): return' in health
+assert 'if not self.require_pairing(): return' in inventory
+PY
 grep -F 'Requires=cyberhive-persist-init.service' "$root/etc/systemd/system/cyberhive-onboarding-init.service" >/dev/null
 grep -F 'SSH blocked; HTTP pairing only' "$root/usr/local/bin/cyberhive-welcome" >/dev/null
 
