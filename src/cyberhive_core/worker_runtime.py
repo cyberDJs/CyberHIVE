@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Mapping
-import json
+import hashlib
 import uuid
 
 from .action_handlers import ActionHandlerContext, ActionHandlerRegistry
@@ -30,6 +30,7 @@ from .secure_channel import (
     ChannelVerification,
     SecureChannel,
     SignedChannelEnvelope,
+    canonical_json,
 )
 
 
@@ -364,15 +365,29 @@ class NodeWorkerRuntime:
         )
 
     def _result_payload_bytes(self, payload: Mapping[str, Any]) -> int:
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        encoded = canonical_json(payload).encode("utf-8")
         return len(encoded)
+
+    def _bounded_identifier(self, value: Any, *, prefix: str, max_chars: int = 128) -> str:
+        text = str(value or "unknown")
+        if len(text) <= max_chars:
+            return text
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+        return f"{prefix}_truncated_{digest}"
 
     def _bounded_result_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         payload_bytes = self._result_payload_bytes(payload)
         if payload_bytes <= self.policy.max_result_payload_bytes:
             return payload
 
+        bounded_request_id = self._bounded_identifier(payload.get("request_id"), prefix="request")
+        bounded_action_request_id = self._bounded_identifier(
+            payload.get("action_request_id", payload.get("request_id")),
+            prefix="action",
+        )
         bounded = dict(payload)
+        bounded["request_id"] = bounded_request_id
+        bounded["action_request_id"] = bounded_action_request_id
         bounded["status"] = AgentActionStatus.FAILED.value
         bounded["reason"] = "result payload exceeded max_result_payload_bytes"
         bounded["metadata"] = {
@@ -385,8 +400,38 @@ class NodeWorkerRuntime:
         if self._result_payload_bytes(bounded) <= self.policy.max_result_payload_bytes:
             return bounded
 
-        bounded["metadata"] = {"result_payload_truncated": True}
-        return bounded
+        minimal = {
+            "request_id": bounded_request_id,
+            "action_request_id": bounded_action_request_id,
+            "node_id": self.node_id,
+            "target_node": self.node_id,
+            "action": payload.get("action", AgentActionType.NOOP.value),
+            "status": AgentActionStatus.FAILED.value,
+            "reason": "result payload exceeded max_result_payload_bytes",
+            "created_at": payload.get("created_at"),
+            "completed_at": payload.get("completed_at"),
+            "metadata": {"result_payload_truncated": True},
+            "events": [],
+            "resource_reservation_id": None,
+        }
+        if self._result_payload_bytes(minimal) <= self.policy.max_result_payload_bytes:
+            return minimal
+
+        absolute_minimal = {
+            "request_id": bounded_request_id,
+            "action_request_id": bounded_action_request_id,
+            "node_id": self.node_id,
+            "target_node": self.node_id,
+            "action": AgentActionType.NOOP.value,
+            "status": AgentActionStatus.FAILED.value,
+            "reason": "result payload exceeded max_result_payload_bytes",
+            "metadata": {"result_payload_truncated": True},
+            "events": [],
+            "resource_reservation_id": None,
+        }
+        if self._result_payload_bytes(absolute_minimal) <= self.policy.max_result_payload_bytes:
+            return absolute_minimal
+        raise WorkerRuntimeError("bounded result payload still exceeds max_result_payload_bytes")
 
     def _denied_outcome(self, envelope: SignedChannelEnvelope, verification: ChannelVerification, reason: str) -> WorkerProcessOutcome:
         status = WorkerEnvelopeStatus.DENIED if verification.status != ChannelDecision.STALE else WorkerEnvelopeStatus.FAILED
