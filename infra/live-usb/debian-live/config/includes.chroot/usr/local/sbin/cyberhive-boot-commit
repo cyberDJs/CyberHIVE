@@ -98,6 +98,26 @@ rollback_candidate_reboot() {
   exit 1
 }
 
+commit_candidate_efi_or_reboot() {
+  if efi_rw; then
+    if grub-editenv "$envfile" set "current_slot=$current" 'pending_slot=' 'previous_slot=' 'tries=' 'pending_release_id='; then
+      sync
+      efi_ro || true
+      pending=''
+      return 0
+    fi
+    echo 'CyberHIVE boot commit: final EFI commit write failed; rebooting for recovery' >&2
+    efi_ro || true
+  else
+    echo 'CyberHIVE boot commit: final EFI remount rw failed; rebooting for recovery' >&2
+  fi
+  record_health fail final-efi-commit
+  sync
+  sleep 5
+  systemctl reboot
+  exit 1
+}
+
 current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
 case "$current" in A|B) ;; *) echo 'CyberHIVE boot commit: current slot unknown' >&2; exit 2 ;; esac
 
@@ -190,11 +210,7 @@ if [ -f "$transaction" ]; then
     atomic_text "$tx_new_sequence" "$otadir/current-sequence"
     sync
     if [ "$pending" = "$current" ]; then
-      efi_rw
-      grub-editenv "$envfile" set "current_slot=$current" 'pending_slot=' 'previous_slot=' 'tries=' 'pending_release_id='
-      sync
-      efi_ro
-      pending=''
+      commit_candidate_efi_or_reboot
     fi
     clear_pending_state
     rm -f "$transaction" "$otadir/failed-release-id" "$otadir/failed-sequence" "$otadir/failed-reason"
@@ -307,10 +323,7 @@ if [ "$health_ok" = 'true' ]; then
     atomic_text "$state_pending_sequence" "$otadir/current-sequence"
     sync
 
-    efi_rw
-    grub-editenv "$envfile" set "current_slot=$current" 'pending_slot=' 'previous_slot=' 'tries=' 'pending_release_id='
-    sync
-    efi_ro
+    commit_candidate_efi_or_reboot
 
     clear_pending_state
     rm -f "$transaction" "$otadir/failed-release-id" "$otadir/failed-sequence" "$otadir/failed-reason"

@@ -5,6 +5,7 @@ import json
 import os
 import secrets
 import subprocess
+import threading
 import time
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -21,6 +22,7 @@ ROLE_FILE = CONTROL / 'role'
 PORT = int(os.environ.get('CYBERHIVE_WEB_PORT', '80'))
 ROLES = {'controller-worker', 'worker', 'devbridge-request', 'offline-diagnostics', 'rescue'}
 ATTEMPTS = {}
+ATTEMPTS_LOCK = threading.Lock()
 TAILNETS = (ipaddress.ip_network('100.64.0.0/10'), ipaddress.ip_network('fd7a:115c:a1e0::/48'))
 TRUSTED_HOST_NAMES = {'localhost', 'cyberhive', 'cyberhive.local'}
 TRUSTED_TAILSCALE_NAMES = set()
@@ -216,18 +218,24 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith('/api/') and not self.require_management_request(): return
         if self.path == '/api/pair':
             now = time.monotonic(); peer = self.client_address[0]
-            recent = [t for t in ATTEMPTS.get(peer, []) if now - t < 60]
-            if len(recent) >= 5:
-                ATTEMPTS[peer] = recent
+            with ATTEMPTS_LOCK:
+                recent = [t for t in ATTEMPTS.get(peer, []) if now - t < 60]
+                if len(recent) >= 5:
+                    ATTEMPTS[peer] = recent
+                    limited = True
+                else:
+                    ATTEMPTS[peer] = recent + [now]
+                    limited = False
+            if limited:
                 self.send_json(HTTPStatus.TOO_MANY_REQUESTS, {'error': 'pairing rate limit exceeded'}); return
-            ATTEMPTS[peer] = recent + [now]
             try:
                 supplied = str(self.read_json_body().get('code', '')); expected = PAIR_FILE.read_text().strip()
             except Exception:
                 self.send_json(HTTPStatus.BAD_REQUEST, {'error': 'invalid pairing request'}); return
             if not hmac.compare_digest(supplied, expected):
                 self.send_json(HTTPStatus.UNAUTHORIZED, {'error': 'invalid pairing code'}); return
-            ATTEMPTS.pop(peer, None)
+            with ATTEMPTS_LOCK:
+                ATTEMPTS.pop(peer, None)
             self.send_json(HTTPStatus.OK, {'paired': True}, {'Set-Cookie': f'cyberhive_session={SESSION_TOKEN}; HttpOnly; SameSite=Strict; Path=/'}); return
         if self.path == '/api/role':
             if not self.require_mutation_auth(): return

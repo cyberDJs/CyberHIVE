@@ -142,8 +142,12 @@ grep -F 'candidate persistence unavailable; rebooting for automatic rollback' "$
 grep -F 'commit-transaction.json' "$commit" >/dev/null
 grep -F 'invalid commit transaction schema' "$commit" >/dev/null
 grep -F 'rollback_candidate_reboot()' "$commit" >/dev/null
+grep -F 'commit_candidate_efi_or_reboot()' "$commit" >/dev/null
 grep -F 'failed to write rollback grubenv' "$commit" >/dev/null
 grep -F 'EFI remount rw failed during' "$commit" >/dev/null
+grep -F 'final EFI commit write failed; rebooting for recovery' "$commit" >/dev/null
+grep -F 'final EFI remount rw failed; rebooting for recovery' "$commit" >/dev/null
+grep -F 'record_health fail final-efi-commit' "$commit" >/dev/null
 grep -F 'rollback_malformed_transaction()' "$commit" >/dev/null
 grep -F 'malformed-commit-transaction' "$commit" >/dev/null
 grep -F 'incomplete-commit-rollback' "$commit" >/dev/null
@@ -174,13 +178,18 @@ grep -F 'set efi="$boot_disk,gpt1"' "$builder" >/dev/null
 grep -F 'set slotdev="$boot_disk,gpt2"' "$builder" >/dev/null
 grep -F 'set slotdev="$boot_disk,gpt3"' "$builder" >/dev/null
 grep -F 'cannot prove boot EFI parent' "$builder" >/dev/null
-grep -F 'probe --fs-uuid --set=slot_uuid "$slotdev"' "$builder" >/dev/null
+grep -F 'selected_slot="($slotdev)"' "$builder" >/dev/null
+grep -F 'probe --fs-uuid --set=slot_uuid "$selected_slot"' "$builder" >/dev/null
 grep -F 'cannot prove selected slot filesystem UUID' "$builder" >/dev/null
 grep -F 'live-media=/dev/disk/by-uuid/$slot_uuid' "$builder" >/dev/null
 grep -F 'cyberhive.slot_uuid=$slot_uuid' "$builder" >/dev/null
 grep -F 'slot_uuid_duplicate' "$builder" >/dev/null
+grep -F 'for candidate in (*); do' "$builder" >/dev/null
 grep -F 'duplicate selected slot filesystem UUID' "$builder" >/dev/null
+grep -F 'selected slot filesystem UUID resolved ambiguously' "$builder" >/dev/null
 assert_before "$builder" 'duplicate selected slot filesystem UUID' 'linux "$slotroot/vmlinuz"'
+assert_before "$builder" 'selected slot filesystem UUID resolved ambiguously' 'linux "$slotroot/vmlinuz"'
+if grep -F 'hd15,gpt3' "$builder"; then echo 'GRUB duplicate UUID check must not be limited to a hard-coded disk list' >&2; exit 1; fi
 if grep -F 'search --no-floppy --label' "$builder"; then echo 'GRUB slot selection must not use globally non-unique labels' >&2; exit 1; fi
 grep -F '"usb_written": false' "$builder" >/dev/null
 if grep -F '/dev/sd' "$builder"; then echo 'image builder must not name a physical disk target' >&2; exit 1; fi
@@ -197,6 +206,9 @@ grep -F 'CSRF_TOKEN = secrets.token_urlsafe' "$web" >/dev/null
 grep -F 'def require_mutation_auth' "$web" >/dev/null
 grep -F 'def trusted_management_host' "$web" >/dev/null
 grep -F 'def trusted_management_request' "$web" >/dev/null
+grep -F 'import threading' "$web" >/dev/null
+grep -F 'ATTEMPTS_LOCK = threading.Lock()' "$web" >/dev/null
+grep -F 'with ATTEMPTS_LOCK:' "$web" >/dev/null
 grep -F 'TRUSTED_TAILSCALE_NAMES' "$web" >/dev/null
 grep -F "host.startswith(f'{name}.') and host.endswith('.ts.net')" "$web" >/dev/null
 grep -F "headers.get('Host'" "$web" >/dev/null
