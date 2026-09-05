@@ -160,10 +160,12 @@ env_state=$(grub-editenv "$envfile" list) || {
   echo 'CyberHIVE boot commit: grubenv unreadable' >&2
   exit 2
 }
+efi_current_slot=$(printf '%s\n' "$env_state" | sed -n 's/^current_slot=//p' | head -n 1)
 pending=$(printf '%s\n' "$env_state" | sed -n 's/^pending_slot=//p' | head -n 1)
 pending_release=$(printf '%s\n' "$env_state" | sed -n 's/^pending_release_id=//p' | head -n 1)
 previous=$(printf '%s\n' "$env_state" | sed -n 's/^previous_slot=//p' | head -n 1)
 tries=$(printf '%s\n' "$env_state" | sed -n 's/^tries=//p' | head -n 1)
+case "$efi_current_slot" in ''|A|B) ;; *) echo 'CyberHIVE boot commit: invalid EFI current slot' >&2; exit 2 ;; esac
 
 if [ "$state_available" != 'true' ]; then
   if [ "$pending" = "$current" ]; then
@@ -222,6 +224,7 @@ if [ -f "$transaction" ]; then
       exit 2
     fi
     if [ "$pending" = "$current" ] \
+       || [ "$efi_current_slot" != "$current" ] \
        || [ -n "$previous" ] \
        || [ -n "$tries" ] \
        || [ -n "$pending_release" ]; then

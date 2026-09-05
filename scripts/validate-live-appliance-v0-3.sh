@@ -140,9 +140,11 @@ grep -F 'unique EFI sibling not found on booted USB parent' "$commit" >/dev/null
 if grep -F 'blkid -L' "$commit"; then echo 'boot commit must not resolve critical siblings by global label' >&2; exit 1; fi
 grep -F 'env_state=$(grub-editenv "$envfile" list) ||' "$commit" >/dev/null
 grep -F 'grubenv unreadable' "$commit" >/dev/null
+grep -F "efi_current_slot=\$(printf '%s\\n' \"\$env_state\"" "$commit" >/dev/null
 grep -F "pending=\$(printf '%s\\n' \"\$env_state\"" "$commit" >/dev/null
 grep -F "previous=\$(printf '%s\\n' \"\$env_state\"" "$commit" >/dev/null
 grep -F "tries=\$(printf '%s\\n' \"\$env_state\"" "$commit" >/dev/null
+grep -F 'invalid EFI current slot' "$commit" >/dev/null
 if grep -F 'grub-editenv "$envfile" list | sed' "$commit"; then echo 'boot commit must not mask grubenv read failure through a pipeline' >&2; exit 1; fi
 grep -F 'candidate persistence unavailable; rebooting for automatic rollback' "$commit" >/dev/null
 grep -F 'commit-transaction.json' "$commit" >/dev/null
@@ -156,6 +158,7 @@ grep -F 'final EFI remount rw failed; rebooting for recovery' "$commit" >/dev/nu
 grep -F 'record_health fail final-efi-commit' "$commit" >/dev/null
 grep -F 'inconsistent EFI transaction state' "$commit" >/dev/null
 grep -F 'record_health fail inconsistent-efi-transaction' "$commit" >/dev/null
+grep -F '|| [ "$efi_current_slot" != "$current" ]' "$commit" >/dev/null
 grep -F '|| [ -n "$previous" ]' "$commit" >/dev/null
 grep -F '|| [ -n "$tries" ]' "$commit" >/dev/null
 grep -F '|| [ -n "$pending_release" ]' "$commit" >/dev/null
