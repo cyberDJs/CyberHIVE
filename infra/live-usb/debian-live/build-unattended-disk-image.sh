@@ -127,6 +127,7 @@ fi
 set slotroot=($slotdev)/slots/$boot_slot
 
 if [ ! -f "$slotroot/vmlinuz" -o ! -f "$slotroot/initrd.img" -o ! -f "$slotroot/live/filesystem.squashfs" ]; then
+  set missing_slot="$boot_slot"
   if [ "$boot_slot" = "A" ]; then
     set boot_slot=B
     set slotdev="$boot_disk,gpt3"
@@ -137,6 +138,14 @@ if [ ! -f "$slotroot/vmlinuz" -o ! -f "$slotroot/initrd.img" -o ! -f "$slotroot/
     set live_path=/slots/A/live
   fi
   set slotroot=($slotdev)/slots/$boot_slot
+  if [ -n "$pending_slot" -a "$missing_slot" = "$pending_slot" ]; then
+    set current_slot=$boot_slot
+    set pending_slot=
+    set previous_slot=
+    set tries=
+    set pending_release_id=
+    save_env -f "$envfile" current_slot pending_slot previous_slot tries pending_release_id
+  fi
 fi
 
 if [ ! -f "$slotroot/vmlinuz" -o ! -f "$slotroot/initrd.img" -o ! -f "$slotroot/live/filesystem.squashfs" ]; then

@@ -138,6 +138,10 @@ grep -F '. /usr/local/lib/cyberhive-device.sh' "$commit" >/dev/null
 grep -F 'cyberhive_live_medium_device' "$commit" >/dev/null
 grep -F 'unique EFI sibling not found on booted USB parent' "$commit" >/dev/null
 if grep -F 'blkid -L' "$commit"; then echo 'boot commit must not resolve critical siblings by global label' >&2; exit 1; fi
+grep -F 'env_state=$(grub-editenv "$envfile" list) ||' "$commit" >/dev/null
+grep -F 'grubenv unreadable' "$commit" >/dev/null
+grep -F "pending=\$(printf '%s\\n' \"\$env_state\"" "$commit" >/dev/null
+if grep -F 'grub-editenv "$envfile" list | sed' "$commit"; then echo 'boot commit must not mask grubenv read failure through a pipeline' >&2; exit 1; fi
 grep -F 'candidate persistence unavailable; rebooting for automatic rollback' "$commit" >/dev/null
 grep -F 'commit-transaction.json' "$commit" >/dev/null
 grep -F 'invalid commit transaction schema' "$commit" >/dev/null
@@ -178,6 +182,9 @@ grep -F 'set efi="$boot_disk,gpt1"' "$builder" >/dev/null
 grep -F 'set slotdev="$boot_disk,gpt2"' "$builder" >/dev/null
 grep -F 'set slotdev="$boot_disk,gpt3"' "$builder" >/dev/null
 grep -F 'cannot prove boot EFI parent' "$builder" >/dev/null
+grep -F 'set missing_slot="$boot_slot"' "$builder" >/dev/null
+grep -F 'if [ -n "$pending_slot" -a "$missing_slot" = "$pending_slot" ]; then' "$builder" >/dev/null
+grep -F 'save_env -f "$envfile" current_slot pending_slot previous_slot tries pending_release_id' "$builder" >/dev/null
 grep -F 'selected_slot="($slotdev)"' "$builder" >/dev/null
 grep -F 'probe --fs-uuid --set=slot_uuid "$selected_slot"' "$builder" >/dev/null
 grep -F 'cannot prove selected slot filesystem UUID' "$builder" >/dev/null

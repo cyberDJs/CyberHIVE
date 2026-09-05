@@ -156,8 +156,12 @@ mount -o ro,nodev,nosuid,noexec "$efi_dev" "$efi_mount"
 efi_mounted='true'
 envfile="$efi_mount/cyberhive/grubenv"
 [ -f "$envfile" ] || { echo 'CyberHIVE boot commit: grubenv missing' >&2; exit 2; }
-pending=$(grub-editenv "$envfile" list | sed -n 's/^pending_slot=//p' | head -n 1)
-pending_release=$(grub-editenv "$envfile" list | sed -n 's/^pending_release_id=//p' | head -n 1)
+env_state=$(grub-editenv "$envfile" list) || {
+  echo 'CyberHIVE boot commit: grubenv unreadable' >&2
+  exit 2
+}
+pending=$(printf '%s\n' "$env_state" | sed -n 's/^pending_slot=//p' | head -n 1)
+pending_release=$(printf '%s\n' "$env_state" | sed -n 's/^pending_release_id=//p' | head -n 1)
 
 if [ "$state_available" != 'true' ]; then
   if [ "$pending" = "$current" ]; then
