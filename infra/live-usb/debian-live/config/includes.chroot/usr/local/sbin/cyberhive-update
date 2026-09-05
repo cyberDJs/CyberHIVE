@@ -1,0 +1,251 @@
+#!/bin/sh
+set -eu
+
+. /etc/cyberhive/live/config.env
+. /usr/local/lib/cyberhive-device.sh
+
+manifest_url=''
+do_reboot='false'
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --manifest) manifest_url=${2:-}; shift 2 ;;
+    --reboot) do_reboot='true'; shift ;;
+    *) echo "usage: cyberhive-update --manifest URL [--reboot]" >&2; exit 2 ;;
+  esac
+done
+[ -n "$manifest_url" ] || { echo 'manifest URL required' >&2; exit 2; }
+
+persist="$CYBERHIVE_PERSIST_ROOT"
+mountpoint -q "$persist" || systemctl start cyberhive-persist-init.service
+mountpoint -q "$persist" || { echo 'persistence unavailable' >&2; exit 3; }
+
+mkdir -p /run/cyberhive
+lock_dir=/run/cyberhive/ota.lock
+if ! mkdir "$lock_dir" 2>/dev/null; then
+  echo 'another CyberHIVE OTA operation is active' >&2
+  exit 6
+fi
+
+work="$persist/cache/ota.$$"
+slot_mount=/run/cyberhive/slot-target
+slot_mounted='false'
+efi_mount=/run/cyberhive/efi-update
+efi_mounted='false'
+cleanup() {
+  if [ "$slot_mounted" = 'true' ]; then umount "$slot_mount" 2>/dev/null || true; fi
+  if [ "$efi_mounted" = 'true' ]; then umount "$efi_mount" 2>/dev/null || true; fi
+  rm -rf "$work" "$lock_dir"
+}
+trap cleanup EXIT HUP INT TERM
+
+atomic_text() {
+  value=$1
+  target=$2
+  tmp="$target.tmp.$$"
+  printf '%s\n' "$value" >"$tmp"
+  chmod 0600 "$tmp"
+  mv "$tmp" "$target"
+}
+
+atomic_copy() {
+  source=$1
+  target=$2
+  tmp="$target.tmp.$$"
+  install -m 0600 "$source" "$tmp"
+  mv "$tmp" "$target"
+}
+
+read_sequence_file() {
+  file=$1
+  if [ ! -e "$file" ]; then
+    printf '0\n'
+    return 0
+  fi
+  value=$(cat "$file" 2>/dev/null) || return 1
+  case "$value" in *[!0-9]*|'') return 1 ;; esac
+  printf '%s\n' "$value"
+}
+
+current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
+case "$current" in
+  A) inactive=B; inactive_label="$CYBERHIVE_SLOT_B_LABEL" ;;
+  B) inactive=A; inactive_label="$CYBERHIVE_SLOT_A_LABEL" ;;
+  *) echo 'current slot unknown' >&2; exit 3 ;;
+esac
+
+live_dev=$(cyberhive_live_medium_device 2>/dev/null || true)
+[ -n "$live_dev" ] && cyberhive_verify_live_slot "$current" "$live_dev" || {
+  echo 'booted live medium does not match declared slot' >&2
+  exit 3
+}
+parent=$(cyberhive_parent_device "$live_dev" 2>/dev/null || true)
+[ -n "$parent" ] && cyberhive_require_usb_parent "$parent" || {
+  echo 'refusing OTA on non-USB boot parent' >&2
+  exit 3
+}
+state_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
+efi_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
+target_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$inactive_label" 2>/dev/null || true)
+[ -n "$state_dev" ] && [ -n "$efi_dev" ] && [ -n "$target_dev" ] || {
+  echo 'unique STATE/EFI/inactive-slot siblings not found on booted USB parent' >&2
+  exit 3
+}
+mounted_state=$(findmnt -nr -o SOURCE --target "$persist" 2>/dev/null || true)
+mounted_state=$(printf '%s' "$mounted_state" | sed 's/\[.*$//')
+[ -n "$mounted_state" ] \
+  && [ "$(readlink -f "$mounted_state" 2>/dev/null || printf '%s' "$mounted_state")" = "$(readlink -f "$state_dev" 2>/dev/null || printf '%s' "$state_dev")" ] || {
+  echo 'mounted STATE identity mismatch' >&2
+  exit 3
+}
+
+otadir="$persist/state/ota"
+mkdir -p "$work" "$otadir"
+if [ -s "$otadir/pending-slot" ] \
+   || [ -s "$otadir/pending-release-id" ] \
+   || [ -s "$otadir/pending-sequence" ] \
+   || [ -s "$otadir/pending-phase" ]; then
+  pending_slot=$(cat "$otadir/pending-slot" 2>/dev/null || true)
+  pending_release=$(cat "$otadir/pending-release-id" 2>/dev/null || true)
+  pending_phase=$(cat "$otadir/pending-phase" 2>/dev/null || true)
+  echo "refusing OTA restage: inactive slot already armed or pending; slot=${pending_slot:-unknown} release=${pending_release:-unknown} phase=${pending_phase:-unknown}" >&2
+  exit 4
+fi
+
+mkdir -p "$efi_mount"
+mount -o ro,nodev,nosuid,noexec "$efi_dev" "$efi_mount"
+efi_mounted='true'
+envfile="$efi_mount/cyberhive/grubenv"
+if [ -f "$envfile" ]; then
+  efi_state=$(grub-editenv "$envfile" list) || {
+    echo 'refusing OTA restage: EFI grubenv unreadable' >&2
+    exit 4
+  }
+  efi_pending_slot=$(printf '%s\n' "$efi_state" | sed -n 's/^pending_slot=//p' | head -n 1)
+  efi_pending_release=$(printf '%s\n' "$efi_state" | sed -n 's/^pending_release_id=//p' | head -n 1)
+  efi_previous_slot=$(printf '%s\n' "$efi_state" | sed -n 's/^previous_slot=//p' | head -n 1)
+  efi_tries=$(printf '%s\n' "$efi_state" | sed -n 's/^tries=//p' | head -n 1)
+  if [ -n "$efi_pending_slot" ] \
+     || [ -n "$efi_pending_release" ] \
+     || [ -n "$efi_previous_slot" ] \
+     || [ -n "$efi_tries" ]; then
+    echo "refusing OTA restage: EFI grubenv already armed or pending; slot=${efi_pending_slot:-unknown} release=${efi_pending_release:-unknown} tries=${efi_tries:-unknown}" >&2
+    exit 4
+  fi
+fi
+umount "$efi_mount"
+efi_mounted='false'
+manifest="$work/channel.json"
+sig="$work/channel.json.sig"
+bundle="$work/slot.tar"
+
+curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 "$manifest_url" -o "$manifest"
+curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 "${manifest_url}.sig" -o "$sig"
+ssh-keygen -Y verify \
+  -f /etc/cyberhive/ota/allowed_signers \
+  -I cyberhive-dev-release \
+  -n cyberhive-ota \
+  -s "$sig" <"$manifest" >/dev/null
+
+jq -e '.schema == "cyberhive.ota.manifest.v1" and .channel == "dev"' "$manifest" >/dev/null
+release_id=$(jq -r '.release_id' "$manifest")
+bundle_url=$(jq -r '.bundle_url' "$manifest")
+expected_sha=$(jq -r '.bundle_sha256' "$manifest")
+expected_bytes=$(jq -r '.bundle_bytes' "$manifest")
+source_commit=$(jq -r '.source_commit' "$manifest")
+sequence=$(jq -r '.sequence' "$manifest")
+case "$expected_sha" in *[!0-9a-f]*|'') echo 'invalid bundle SHA-256' >&2; exit 4 ;; esac
+case "$expected_bytes" in *[!0-9]*|'') echo 'invalid bundle byte count' >&2; exit 4 ;; esac
+[ "${#expected_sha}" -eq 64 ] || { echo 'invalid bundle SHA-256 length' >&2; exit 4; }
+[ -n "$release_id" ] && [ "$release_id" != null ] || { echo 'release_id missing' >&2; exit 4; }
+[ -n "$source_commit" ] && [ "$source_commit" != null ] || { echo 'source_commit missing' >&2; exit 4; }
+case "$sequence" in *[!0-9]*|'') echo 'invalid release sequence' >&2; exit 4 ;; esac
+[ "$sequence" -gt 0 ] || { echo 'release sequence must be positive' >&2; exit 4; }
+
+current_sequence=$(read_sequence_file "$persist/state/ota/current-sequence") || {
+  echo 'malformed persisted current-sequence; refusing OTA' >&2
+  exit 4
+}
+failed_sequence=$(read_sequence_file "$persist/state/ota/failed-sequence") || {
+  echo 'malformed persisted failed-sequence; refusing OTA' >&2
+  exit 4
+}
+sequence_floor=$current_sequence
+[ "$failed_sequence" -le "$sequence_floor" ] || sequence_floor=$failed_sequence
+current_release=$(cat "$persist/state/ota/current-release-id" 2>/dev/null || true)
+failed_release=$(cat "$persist/state/ota/failed-release-id" 2>/dev/null || true)
+if [ "$release_id" = "$current_release" ]; then
+  echo "CyberHIVE OTA: already on release $release_id"
+  exit 0
+fi
+if [ -n "$failed_release" ] && [ "$release_id" = "$failed_release" ]; then
+  echo "refusing previously failed OTA release: $release_id" >&2
+  exit 4
+fi
+[ "$sequence" -gt "$sequence_floor" ] || {
+  echo "refusing OTA replay/downgrade/quarantine: sequence=$sequence floor=$sequence_floor" >&2
+  exit 4
+}
+
+curl -fL --proto '=https' --proto-redir '=https' --tlsv1.2 "$bundle_url" -o "$bundle"
+actual_bytes=$(wc -c <"$bundle" | tr -d ' ')
+actual_sha=$(sha256sum "$bundle" | awk '{print $1}')
+[ "$actual_bytes" = "$expected_bytes" ] || { echo 'bundle byte count mismatch' >&2; exit 5; }
+[ "$actual_sha" = "$expected_sha" ] || { echo 'bundle SHA-256 mismatch' >&2; exit 5; }
+
+entries=$(tar -tf "$bundle" | LC_ALL=C sort)
+expected_entries='slot/initrd.img
+slot/live/filesystem.squashfs
+slot/slot.json
+slot/vmlinuz'
+[ "$entries" = "$expected_entries" ] || { printf '%s\n' "$entries" >&2; echo 'unexpected OTA bundle contents' >&2; exit 5; }
+if ! tar -tvf "$bundle" | awk 'substr($1,1,1) != "-" { bad=1 } END { exit bad }'; then
+  echo 'OTA bundle entries must all be regular files' >&2
+  exit 5
+fi
+
+mkdir -p "$slot_mount"
+mount -o rw,nodev,nosuid "$target_dev" "$slot_mount"
+slot_mounted='true'
+new="$slot_mount/slots/${inactive}.new"
+old="$slot_mount/slots/${inactive}.old"
+current_dir="$slot_mount/slots/$inactive"
+rm -rf "$new" "$old"
+mkdir -p "$new"
+tar -xf "$bundle" -C "$new" --strip-components=1 --no-same-owner
+[ -s "$new/vmlinuz" ] && [ -s "$new/initrd.img" ] && [ -s "$new/live/filesystem.squashfs" ] || { echo 'incomplete extracted slot' >&2; exit 5; }
+cp "$manifest" "$new/channel.json"
+cp "$sig" "$new/channel.json.sig"
+sync -f "$slot_mount" 2>/dev/null || sync
+if [ -d "$current_dir" ]; then mv "$current_dir" "$old"; fi
+mv "$new" "$current_dir"
+rm -rf "$old"
+sync -f "$slot_mount" 2>/dev/null || sync
+umount "$slot_mount"
+slot_mounted='false'
+
+atomic_copy "$manifest" "$otadir/pending-channel.json"
+atomic_copy "$sig" "$otadir/pending-channel.json.sig"
+atomic_text "$source_commit" "$otadir/pending-source-commit"
+atomic_text "$sequence" "$otadir/pending-sequence"
+atomic_text "$release_id" "$otadir/pending-release-id"
+atomic_text "$inactive" "$otadir/pending-slot"
+atomic_text "$current" "$otadir/pending-previous-slot"
+rm -f "$otadir/commit-transaction.json"
+sync
+
+mkdir -p "$efi_mount"
+mount -o rw,nodev,nosuid,noexec "$efi_dev" "$efi_mount"
+efi_mounted='true'
+envfile="$efi_mount/cyberhive/grubenv"
+[ -f "$envfile" ] || grub-editenv "$envfile" create
+grub-editenv "$envfile" set \
+  "previous_slot=$current" \
+  "pending_slot=$inactive" \
+  'tries=1' \
+  "pending_release_id=$release_id"
+sync
+atomic_text 'armed' "$otadir/pending-phase"
+sync
+
+echo "CyberHIVE OTA staged: release=$release_id slot=$inactive source_commit=$source_commit"
+if [ "$do_reboot" = 'true' ]; then systemctl reboot; fi

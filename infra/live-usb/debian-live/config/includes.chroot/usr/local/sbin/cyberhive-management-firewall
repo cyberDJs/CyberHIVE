@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+
+for bin in iptables ip6tables; do
+  command -v "$bin" >/dev/null 2>&1 || {
+    echo "CyberHIVE management firewall: required command missing: $bin" >&2
+    exit 3
+  }
+done
+
+ensure_rule() {
+  bin=$1
+  shift
+  if "$bin" -C INPUT "$@" >/dev/null 2>&1; then return 0; fi
+  "$bin" -I INPUT 1 "$@"
+}
+
+ensure_rule iptables '!' -i tailscale0 -p tcp --dport 22 -j DROP
+ensure_rule ip6tables '!' -i tailscale0 -p tcp --dport 22 -j DROP
+
+ensure_rule iptables '!' -i tailscale0 -p tcp --dport 80 -j DROP
+for net in 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16; do
+  ensure_rule iptables '!' -i tailscale0 -s "$net" -p tcp --dport 80 -j ACCEPT
+done
+
+ensure_rule ip6tables '!' -i tailscale0 -p tcp --dport 80 -j DROP
+for net in ::1/128 fc00::/7 fe80::/10; do
+  ensure_rule ip6tables '!' -i tailscale0 -s "$net" -p tcp --dport 80 -j ACCEPT
+done

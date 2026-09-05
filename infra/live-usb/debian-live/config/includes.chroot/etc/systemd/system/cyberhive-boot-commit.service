@@ -1,0 +1,12 @@
+[Unit]
+Description=CyberHIVE candidate boot health commit or rollback
+After=network-online.target tailscaled.service ssh.service cyberhive-web.service cyberhive-host-disk-guard.service
+Wants=network-online.target tailscaled.service ssh.service cyberhive-web.service cyberhive-host-disk-guard.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cyberhive-boot-commit
+TimeoutStartSec=150
+
+[Install]
+WantedBy=multi-user.target

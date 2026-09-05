@@ -1,0 +1,57 @@
+#!/bin/sh
+set -eu
+
+. /etc/cyberhive/live/config.env
+persist="$CYBERHIVE_PERSIST_ROOT"
+marker="$persist/state/provisioned"
+
+mountpoint -q "$persist" || systemctl start cyberhive-persist-init.service
+[ -e "$marker" ] && exit 0
+
+printf '\n=== CyberHIVE v0.3 first boot ===\n'
+printf 'This one-time setup stores Wi-Fi and Tailscale state only on the USB STATE area.\n'
+printf 'No Wi-Fi password is written to the image, GitHub, shell history, process arguments or support bundle.\n\n'
+
+systemctl start NetworkManager.service
+i=0
+until nmcli general status >/dev/null 2>&1; do
+  i=$((i + 1))
+  [ "$i" -lt 20 ] || { echo 'NetworkManager did not become ready' >&2; exit 3; }
+  sleep 1
+done
+
+if ! nmcli -t -f TYPE,STATE device 2>/dev/null | grep -q '^wifi:connected$'; then
+  nmcli radio wifi on >/dev/null 2>&1 || true
+  nmcli device wifi rescan >/dev/null 2>&1 || true
+  printf 'Visible Wi-Fi networks:\n'
+  nmcli -f SSID,SIGNAL,SECURITY device wifi list 2>/dev/null | sed -n '1,18p' || true
+  printf '\nSSID: '
+  IFS= read -r ssid
+  [ -n "$ssid" ] || { echo 'SSID is required' >&2; exit 3; }
+  printf 'NetworkManager will request the Wi-Fi secret on its protected interactive prompt.\n'
+  nmcli --ask device wifi connect "$ssid"
+fi
+
+install -d -m 0700 "$persist/state/network"
+for f in /etc/NetworkManager/system-connections/*.nmconnection; do
+  [ -f "$f" ] || continue
+  if grep -q '^type=wifi$' "$f"; then
+    install -m 0600 -o root -g root "$f" "$persist/state/network/$(basename "$f")"
+  fi
+done
+sync
+
+printf '\nWi-Fi persistence saved. Enrolling Tailscale node %s...\n' "$CYBERHIVE_TAILSCALE_HOSTNAME"
+printf 'Open the authentication URL shown below on your phone or another computer.\n\n'
+systemctl start tailscaled.service
+tailscale up --hostname="$CYBERHIVE_TAILSCALE_HOSTNAME" --accept-routes=false --accept-dns=true
+
+tailscale status --json | jq -e '.BackendState == "Running"' >/dev/null
+
+printf 'provisioned_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$marker"
+printf 'tailscale_hostname=%s\n' "$CYBERHIVE_TAILSCALE_HOSTNAME" >>"$marker"
+chmod 0600 "$marker"
+sync
+
+printf '\nCyberHIVE first boot provisioning: PASS\n'
+printf 'Future boots should restore Wi-Fi, Tailscale identity and key-only SSH automatically.\n'

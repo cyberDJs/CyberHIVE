@@ -1,0 +1,361 @@
+#!/bin/sh
+set -eu
+. /etc/cyberhive/live/config.env
+. /usr/local/lib/cyberhive-device.sh
+
+persist="$CYBERHIVE_PERSIST_ROOT"
+mkdir -p /run/cyberhive
+lock_dir=/run/cyberhive/ota.lock
+lock_held='false'
+efi_mount=/run/cyberhive/efi-boot-commit
+efi_mounted='false'
+cleanup() {
+  if [ "$efi_mounted" = 'true' ]; then umount "$efi_mount" 2>/dev/null || true; fi
+  if [ "$lock_held" = 'true' ]; then rmdir "$lock_dir" 2>/dev/null || true; fi
+}
+trap cleanup EXIT HUP INT TERM
+
+n=0
+while ! mkdir "$lock_dir" 2>/dev/null; do
+  n=$((n + 1))
+  [ "$n" -lt 30 ] || { echo 'CyberHIVE boot commit: OTA lock timeout' >&2; exit 6; }
+  sleep 1
+done
+lock_held='true'
+
+atomic_text() {
+  value=$1
+  target=$2
+  tmp="$target.tmp.$$"
+  printf '%s\n' "$value" >"$tmp"
+  chmod 0600 "$tmp"
+  mv "$tmp" "$target"
+}
+
+read_sequence_file() {
+  file=$1
+  if [ ! -e "$file" ]; then
+    printf '0\n'
+    return 0
+  fi
+  value=$(cat "$file" 2>/dev/null) || return 1
+  case "$value" in *[!0-9]*|'') return 1 ;; esac
+  printf '%s\n' "$value"
+}
+
+clear_pending_state() {
+  rm -f \
+    "$otadir/pending-channel.json" \
+    "$otadir/pending-channel.json.sig" \
+    "$otadir/pending-source-commit" \
+    "$otadir/pending-sequence" \
+    "$otadir/pending-release-id" \
+    "$otadir/pending-slot" \
+    "$otadir/pending-previous-slot" \
+    "$otadir/pending-phase"
+}
+
+quarantine_release() {
+  release=$1
+  sequence=$2
+  reason=$3
+  if [ -n "$release" ]; then atomic_text "$release" "$otadir/failed-release-id"; fi
+  case "$sequence" in *[!0-9]*|'') ;; *) atomic_text "$sequence" "$otadir/failed-sequence" ;; esac
+  atomic_text "$reason" "$otadir/failed-reason"
+}
+
+record_health() {
+  status=$1
+  reason=$2
+  mkdir -p "$persist/state/evidence"
+  printf 'status=%s\nslot=%s\nreason=%s\ntime=%s\n' \
+    "$status" "$current" "$reason" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    >"$persist/state/evidence/last-boot-health"
+}
+
+efi_rw() {
+  mount -o remount,rw,nodev,nosuid,noexec "$efi_mount"
+}
+
+efi_ro() {
+  mount -o remount,ro,nodev,nosuid,noexec "$efi_mount"
+}
+
+rollback_candidate_reboot() {
+  reason=$1
+  if efi_rw; then
+    if grub-editenv "$envfile" set 'tries=0'; then
+      sync
+    else
+      echo "CyberHIVE boot commit: failed to write rollback grubenv for $reason" >&2
+    fi
+    efi_ro || true
+  else
+    echo "CyberHIVE boot commit: EFI remount rw failed during $reason; rebooting for automatic rollback" >&2
+  fi
+  sleep 5
+  systemctl reboot
+  exit 1
+}
+
+commit_candidate_efi_or_reboot() {
+  if efi_rw; then
+    if grub-editenv "$envfile" set "current_slot=$current" 'pending_slot=' 'previous_slot=' 'tries=' 'pending_release_id='; then
+      sync
+      efi_ro || true
+      pending=''
+      return 0
+    fi
+    echo 'CyberHIVE boot commit: final EFI commit write failed; rebooting for recovery' >&2
+    efi_ro || true
+  else
+    echo 'CyberHIVE boot commit: final EFI remount rw failed; rebooting for recovery' >&2
+  fi
+  record_health fail final-efi-commit
+  sync
+  sleep 5
+  systemctl reboot
+  exit 1
+}
+
+current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
+case "$current" in A|B) ;; *) echo 'CyberHIVE boot commit: current slot unknown' >&2; exit 2 ;; esac
+
+live_dev=$(cyberhive_live_medium_device 2>/dev/null || true)
+[ -n "$live_dev" ] && cyberhive_verify_live_slot "$current" "$live_dev" || {
+  echo 'CyberHIVE boot commit: booted live medium does not match declared slot' >&2
+  exit 2
+}
+parent=$(cyberhive_parent_device "$live_dev" 2>/dev/null || true)
+[ -n "$parent" ] && cyberhive_require_usb_parent "$parent" || {
+  echo 'CyberHIVE boot commit: refusing non-USB boot parent' >&2
+  exit 2
+}
+efi_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
+[ -n "$efi_dev" ] || {
+  echo 'CyberHIVE boot commit: unique EFI sibling not found on booted USB parent' >&2
+  exit 2
+}
+
+state_available='false'
+state_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
+if mountpoint -q "$persist" && [ -n "$state_dev" ]; then
+  mounted_state=$(findmnt -nr -o SOURCE --target "$persist" 2>/dev/null || true)
+  mounted_state=$(printf '%s' "$mounted_state" | sed 's/\[.*$//')
+  if [ -n "$mounted_state" ] \
+     && [ "$(readlink -f "$mounted_state" 2>/dev/null || printf '%s' "$mounted_state")" = "$(readlink -f "$state_dev" 2>/dev/null || printf '%s' "$state_dev")" ]; then
+    state_available='true'
+  else
+    echo 'CyberHIVE boot commit: mounted STATE identity/parent mismatch' >&2
+    exit 2
+  fi
+fi
+
+mkdir -p "$efi_mount"
+mount -o ro,nodev,nosuid,noexec "$efi_dev" "$efi_mount"
+efi_mounted='true'
+envfile="$efi_mount/cyberhive/grubenv"
+[ -f "$envfile" ] || { echo 'CyberHIVE boot commit: grubenv missing' >&2; exit 2; }
+env_state=$(grub-editenv "$envfile" list) || {
+  echo 'CyberHIVE boot commit: grubenv unreadable' >&2
+  exit 2
+}
+efi_current_slot=$(printf '%s\n' "$env_state" | sed -n 's/^current_slot=//p' | head -n 1)
+pending=$(printf '%s\n' "$env_state" | sed -n 's/^pending_slot=//p' | head -n 1)
+pending_release=$(printf '%s\n' "$env_state" | sed -n 's/^pending_release_id=//p' | head -n 1)
+previous=$(printf '%s\n' "$env_state" | sed -n 's/^previous_slot=//p' | head -n 1)
+tries=$(printf '%s\n' "$env_state" | sed -n 's/^tries=//p' | head -n 1)
+case "$efi_current_slot" in ''|A|B) ;; *) echo 'CyberHIVE boot commit: invalid EFI current slot' >&2; exit 2 ;; esac
+
+if [ "$state_available" != 'true' ]; then
+  if [ "$pending" = "$current" ]; then
+    echo 'CyberHIVE candidate persistence unavailable; rebooting for automatic rollback' >&2
+    sleep 5
+    systemctl reboot
+    exit 1
+  fi
+  exit 2
+fi
+
+otadir="$persist/state/ota"
+mkdir -p "$persist/state/evidence" "$otadir"
+transaction="$otadir/commit-transaction.json"
+state_pending_slot=$(cat "$otadir/pending-slot" 2>/dev/null || true)
+state_pending_release=$(cat "$otadir/pending-release-id" 2>/dev/null || true)
+state_pending_sequence=$(cat "$otadir/pending-sequence" 2>/dev/null || true)
+
+rollback_malformed_transaction() {
+  reason=$1
+  echo "CyberHIVE boot commit: $reason; rolling back pending candidate" >&2
+  quarantine_release "$state_pending_release" "$state_pending_sequence" "$reason"
+  clear_pending_state
+  rm -f "$transaction"
+  record_health fail "$reason"
+  sync
+  if [ "$pending" = "$current" ]; then
+    rollback_candidate_reboot "$reason"
+  fi
+  exit 1
+}
+
+if [ -f "$transaction" ]; then
+  jq -e '.schema == "cyberhive.ota.commit.v1"' "$transaction" >/dev/null 2>&1 || {
+    echo 'CyberHIVE boot commit: invalid commit transaction schema' >&2
+    rollback_malformed_transaction malformed-commit-transaction
+  }
+  tx_new_slot=$(jq -r '.new_slot' "$transaction")
+  tx_new_release=$(jq -r '.new_release_id' "$transaction")
+  tx_new_sequence=$(jq -r '.new_sequence' "$transaction")
+  tx_old_release=$(jq -r '.old_release_id // ""' "$transaction")
+  tx_old_sequence=$(jq -r '.old_sequence' "$transaction")
+  case "$tx_new_slot" in A|B) ;; *) rollback_malformed_transaction malformed-commit-transaction ;; esac
+  [ -n "$tx_new_release" ] && [ "$tx_new_release" != null ] || rollback_malformed_transaction malformed-commit-transaction
+  case "$tx_new_sequence" in *[!0-9]*|'') rollback_malformed_transaction malformed-commit-transaction ;; esac
+  [ "$tx_new_sequence" -gt 0 ] || rollback_malformed_transaction malformed-commit-transaction
+  case "$tx_old_sequence" in *[!0-9]*|'') rollback_malformed_transaction malformed-commit-transaction ;; esac
+  if [ "$current" = "$tx_new_slot" ]; then
+    atomic_text "$tx_new_release" "$otadir/current-release-id"
+    atomic_text "$tx_new_sequence" "$otadir/current-sequence"
+    sync
+    if [ -n "$pending" ] && [ "$pending" != "$current" ]; then
+      echo 'CyberHIVE boot commit: inconsistent EFI transaction state' >&2
+      record_health fail inconsistent-efi-transaction
+      sync
+      exit 2
+    fi
+    if [ "$pending" = "$current" ] \
+       || [ "$efi_current_slot" != "$current" ] \
+       || [ -n "$previous" ] \
+       || [ -n "$tries" ] \
+       || [ -n "$pending_release" ]; then
+      commit_candidate_efi_or_reboot
+    fi
+    clear_pending_state
+    rm -f "$transaction" "$otadir/failed-release-id" "$otadir/failed-sequence" "$otadir/failed-reason"
+    record_health pass recovered-commit
+    sync
+    exit 0
+  fi
+
+  if [ -n "$tx_old_release" ]; then atomic_text "$tx_old_release" "$otadir/current-release-id"; else rm -f "$otadir/current-release-id"; fi
+  case "$tx_old_sequence" in *[!0-9]*|'') rm -f "$otadir/current-sequence" ;; *) atomic_text "$tx_old_sequence" "$otadir/current-sequence" ;; esac
+  quarantine_release "$tx_new_release" "$tx_new_sequence" incomplete-commit-rollback
+  clear_pending_state
+  rm -f "$transaction"
+  record_health pass recovered-previous-slot
+  sync
+fi
+
+state_pending_slot=$(cat "$otadir/pending-slot" 2>/dev/null || true)
+state_pending_release=$(cat "$otadir/pending-release-id" 2>/dev/null || true)
+state_pending_sequence=$(cat "$otadir/pending-sequence" 2>/dev/null || true)
+
+if [ -z "$pending" ] \
+   && { [ -n "$state_pending_slot" ] || [ -n "$state_pending_release" ] || [ -n "$state_pending_sequence" ]; }; then
+  if [ -z "$state_pending_slot" ] \
+     || [ -z "$state_pending_release" ] \
+     || [ -z "$state_pending_sequence" ]; then
+    echo 'CyberHIVE boot commit: clearing incomplete pre-arm pending STATE journal' >&2
+    clear_pending_state
+    rm -f "$transaction"
+    record_health pass recovered-pre-arm-journal
+    sync
+    state_pending_slot=''
+    state_pending_release=''
+    state_pending_sequence=''
+  fi
+fi
+
+if [ -n "$state_pending_release" ] && [ "$pending" != "$state_pending_slot" ]; then
+  if [ "$current" != "$state_pending_slot" ]; then
+    quarantine_release "$state_pending_release" "$state_pending_sequence" rollback-detected
+    clear_pending_state
+    record_health pass rollback-detected
+    sync
+    state_pending_slot=''
+    state_pending_release=''
+    state_pending_sequence=''
+  else
+    committed_release=$(cat "$otadir/current-release-id" 2>/dev/null || true)
+    committed_sequence=$(cat "$otadir/current-sequence" 2>/dev/null || true)
+    if [ "$committed_release" = "$state_pending_release" ] && [ "$committed_sequence" = "$state_pending_sequence" ]; then
+      clear_pending_state
+      sync
+      state_pending_slot=''
+      state_pending_release=''
+      state_pending_sequence=''
+    else
+      echo 'CyberHIVE boot commit: inconsistent pending STATE/EFI transaction' >&2
+      exit 2
+    fi
+  fi
+fi
+
+candidate='false'
+if [ "$pending" = "$current" ]; then
+  candidate='true'
+  case "$state_pending_sequence" in *[!0-9]*|'') state_pending_sequence='' ;; esac
+  if [ "$state_pending_slot" != "$current" ] \
+     || [ -z "$state_pending_release" ] \
+     || [ -z "$state_pending_sequence" ] \
+     || [ "$state_pending_release" != "$pending_release" ]; then
+    quarantine_release "$state_pending_release" "$state_pending_sequence" incomplete-pending-metadata
+    record_health fail incomplete-pending-metadata
+    sync
+    rollback_candidate_reboot incomplete-pending-metadata
+  fi
+fi
+
+health_ok='false'
+end=$(( $(date +%s) + 120 ))
+while [ "$(date +%s)" -lt "$end" ]; do
+  if cyberhive-host-disk-guard >/dev/null 2>&1 \
+     && systemctl is-active --quiet ssh.service \
+     && systemctl is-active --quiet cyberhive-web.service \
+     && systemctl is-active --quiet tailscaled.service \
+     && tailscale status --json 2>/dev/null | jq -e '.BackendState == "Running"' >/dev/null 2>&1 \
+     && cyberhive-live-health 2>/dev/null | jq -e '.status == "ok" and .host_disk_guard == "pass"' >/dev/null 2>&1; then
+    health_ok='true'
+    break
+  fi
+  sleep 5
+done
+
+if [ "$health_ok" = 'true' ]; then
+  if [ "$candidate" = 'true' ]; then
+    old_release=$(cat "$otadir/current-release-id" 2>/dev/null || true)
+    old_sequence=$(read_sequence_file "$otadir/current-sequence") || {
+      echo 'CyberHIVE boot commit: malformed persisted current-sequence; rolling back candidate' >&2
+      quarantine_release "$state_pending_release" "$state_pending_sequence" malformed-current-sequence
+      record_health fail malformed-current-sequence
+      sync
+      rollback_candidate_reboot malformed-current-sequence
+    }
+    tx_tmp="$transaction.tmp.$$"
+    jq -n --arg new_slot "$current" --arg new_release_id "$state_pending_release" --argjson new_sequence "$state_pending_sequence" --arg old_release_id "$old_release" --argjson old_sequence "$old_sequence" '{schema:"cyberhive.ota.commit.v1",new_slot:$new_slot,new_release_id:$new_release_id,new_sequence:$new_sequence,old_release_id:$old_release_id,old_sequence:$old_sequence}' >"$tx_tmp"
+    chmod 0600 "$tx_tmp"
+    mv "$tx_tmp" "$transaction"
+    sync
+
+    atomic_text "$state_pending_release" "$otadir/current-release-id"
+    atomic_text "$state_pending_sequence" "$otadir/current-sequence"
+    sync
+
+    commit_candidate_efi_or_reboot
+
+    clear_pending_state
+    rm -f "$transaction" "$otadir/failed-release-id" "$otadir/failed-sequence" "$otadir/failed-reason"
+  fi
+  record_health pass healthy
+  sync
+  exit 0
+fi
+
+record_health fail health-gate
+if [ "$candidate" = 'true' ]; then
+  quarantine_release "$state_pending_release" "$state_pending_sequence" health-gate
+  sync
+  rollback_candidate_reboot health-gate
+fi
+sync
+exit 1
