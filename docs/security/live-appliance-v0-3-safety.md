@@ -15,6 +15,7 @@ Only the removable parent disk that contains `CYBER_EFI`, `CYBERHIVE_A`, `CYBERH
 ## Forbidden
 
 - raw runtime writes to `/dev/sd*`, NVMe, SATA or other host disks
+- activating or writing host swap; live boot uses `noswap`
 - writable EFI access before current-slot/STATE/EFI parent and USB transport checks
 - persisting Wi-Fi passwords or Tailscale private state in Git
 - storing the OTA release private signing key on CyberHIVE

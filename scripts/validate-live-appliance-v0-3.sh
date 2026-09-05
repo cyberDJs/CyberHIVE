@@ -141,6 +141,8 @@ if grep -F 'blkid -L' "$commit"; then echo 'boot commit must not resolve critica
 grep -F 'env_state=$(grub-editenv "$envfile" list) ||' "$commit" >/dev/null
 grep -F 'grubenv unreadable' "$commit" >/dev/null
 grep -F "pending=\$(printf '%s\\n' \"\$env_state\"" "$commit" >/dev/null
+grep -F "previous=\$(printf '%s\\n' \"\$env_state\"" "$commit" >/dev/null
+grep -F "tries=\$(printf '%s\\n' \"\$env_state\"" "$commit" >/dev/null
 if grep -F 'grub-editenv "$envfile" list | sed' "$commit"; then echo 'boot commit must not mask grubenv read failure through a pipeline' >&2; exit 1; fi
 grep -F 'candidate persistence unavailable; rebooting for automatic rollback' "$commit" >/dev/null
 grep -F 'commit-transaction.json' "$commit" >/dev/null
@@ -152,6 +154,11 @@ grep -F 'EFI remount rw failed during' "$commit" >/dev/null
 grep -F 'final EFI commit write failed; rebooting for recovery' "$commit" >/dev/null
 grep -F 'final EFI remount rw failed; rebooting for recovery' "$commit" >/dev/null
 grep -F 'record_health fail final-efi-commit' "$commit" >/dev/null
+grep -F 'inconsistent EFI transaction state' "$commit" >/dev/null
+grep -F 'record_health fail inconsistent-efi-transaction' "$commit" >/dev/null
+grep -F '|| [ -n "$previous" ]' "$commit" >/dev/null
+grep -F '|| [ -n "$tries" ]' "$commit" >/dev/null
+grep -F '|| [ -n "$pending_release" ]' "$commit" >/dev/null
 grep -F 'rollback_malformed_transaction()' "$commit" >/dev/null
 grep -F 'malformed-commit-transaction' "$commit" >/dev/null
 grep -F 'incomplete-commit-rollback' "$commit" >/dev/null
@@ -175,6 +182,8 @@ grep -F 'cyberhive_require_usb_parent "$candidate"' "$host_guard" >/dev/null
 if grep -F 'NAME,TYPE,RM' "$host_guard"; then echo 'host-disk guard must not classify CyberHIVE by RM alone' >&2; exit 1; fi
 
 builder='infra/live-usb/debian-live/build-unattended-disk-image.sh'
+auto_config='infra/live-usb/debian-live/auto/config'
+grep -F 'boot=live components noswap' "$auto_config" >/dev/null
 grep -F '. "$script_dir/config/includes.chroot/etc/cyberhive/live/config.env"' "$builder" >/dev/null
 grep -F 'mkfs.vfat -F 32 -n "$CYBERHIVE_EFI_LABEL"' "$builder" >/dev/null
 grep -F 'regexp --set=1:boot_disk' "$builder" >/dev/null
@@ -189,6 +198,7 @@ grep -F 'selected_slot="($slotdev)"' "$builder" >/dev/null
 grep -F 'probe --fs-uuid --set=slot_uuid "$selected_slot"' "$builder" >/dev/null
 grep -F 'cannot prove selected slot filesystem UUID' "$builder" >/dev/null
 grep -F 'live-media=/dev/disk/by-uuid/$slot_uuid' "$builder" >/dev/null
+grep -F 'boot=live components noswap' "$builder" >/dev/null
 grep -F 'cyberhive.slot_uuid=$slot_uuid' "$builder" >/dev/null
 grep -F 'slot_uuid_duplicate' "$builder" >/dev/null
 grep -F 'for candidate in (*); do' "$builder" >/dev/null

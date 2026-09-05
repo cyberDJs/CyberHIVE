@@ -162,6 +162,8 @@ env_state=$(grub-editenv "$envfile" list) || {
 }
 pending=$(printf '%s\n' "$env_state" | sed -n 's/^pending_slot=//p' | head -n 1)
 pending_release=$(printf '%s\n' "$env_state" | sed -n 's/^pending_release_id=//p' | head -n 1)
+previous=$(printf '%s\n' "$env_state" | sed -n 's/^previous_slot=//p' | head -n 1)
+tries=$(printf '%s\n' "$env_state" | sed -n 's/^tries=//p' | head -n 1)
 
 if [ "$state_available" != 'true' ]; then
   if [ "$pending" = "$current" ]; then
@@ -213,7 +215,16 @@ if [ -f "$transaction" ]; then
     atomic_text "$tx_new_release" "$otadir/current-release-id"
     atomic_text "$tx_new_sequence" "$otadir/current-sequence"
     sync
-    if [ "$pending" = "$current" ]; then
+    if [ -n "$pending" ] && [ "$pending" != "$current" ]; then
+      echo 'CyberHIVE boot commit: inconsistent EFI transaction state' >&2
+      record_health fail inconsistent-efi-transaction
+      sync
+      exit 2
+    fi
+    if [ "$pending" = "$current" ] \
+       || [ -n "$previous" ] \
+       || [ -n "$tries" ] \
+       || [ -n "$pending_release" ]; then
       commit_candidate_efi_or_reboot
     fi
     clear_pending_state

@@ -186,7 +186,7 @@ if [ "$slot_uuid_match" != "$selected_slot" ]; then
   reboot
 fi
 
-linux "$slotroot/vmlinuz" boot=live components username=cyberhive hostname=cyberhive-live live-media=/dev/disk/by-uuid/$slot_uuid live-media-path=$live_path cyberhive.slot=$boot_slot cyberhive.slot_uuid=$slot_uuid quiet splash panic=30
+linux "$slotroot/vmlinuz" boot=live components noswap username=cyberhive hostname=cyberhive-live live-media=/dev/disk/by-uuid/$slot_uuid live-media-path=$live_path cyberhive.slot=$boot_slot cyberhive.slot_uuid=$slot_uuid quiet splash panic=30
 initrd "$slotroot/initrd.img"
 boot
 EOGRUB
