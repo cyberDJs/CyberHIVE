@@ -66,6 +66,12 @@ A-Z a-z 0-9 . _ : @ -
 
 The wrapper must reject empty, overlong or unsafe labels before creating build output.
 
+## Source commit safety
+
+`source_commit` is part of the evidence boundary, not a best-effort annotation.
+
+The wrapper must resolve an exact Git commit before creating build output. If the source commit cannot be resolved, the build must fail closed and no success manifest may be produced with `source_commit: UNKNOWN`.
+
 ## Hash evidence safety
 
 A real image build gate must fail closed when no SHA-256 tool is available.
