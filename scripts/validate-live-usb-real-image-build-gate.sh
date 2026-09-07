@@ -57,6 +57,8 @@ grep -n 'BUILD_IMAGE_ONLY_NO_USB' infra/live-usb/debian-live/build-real-image.sh
 grep -n 'refusing real image build' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n 'refusing real image build: no SHA-256 tool available' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n 'invalid builder label' infra/live-usb/debian-live/build-real-image.sh >/dev/null
+grep -n 'refusing real image build: source commit could not be resolved' infra/live-usb/debian-live/build-real-image.sh >/dev/null
+grep -n 'source_commit' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 grep -n 'sh auto/config' infra/live-usb/debian-live/build-real-image.sh >/dev/null
 if grep -n '^[[:space:]]*lb config[[:space:]]*$' infra/live-usb/debian-live/build-real-image.sh; then
   echo 'real image wrapper must use the tracked auto/config instead of unconfigured lb defaults' >&2
@@ -131,12 +133,18 @@ fi
 grep -n '^on:$' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
 grep -n '^  workflow_dispatch:$' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
 grep -n 'debian:bookworm-slim' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
+grep -n 'live-build ca-certificates git rsync xorriso' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
+grep -n 'git config --global --add safe.directory /workspace' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
 grep -n -- '--cap-add SYS_ADMIN' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
 if grep -n -- '--privileged' .github/workflows/live-usb-real-image-build-manual.yml; then
   echo 'manual real image workflow must not grant full container privileges' >&2
   exit 1
 fi
 grep -n '\.cyberhive-live-real-build/\*\.iso' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
+grep -n 'name: cyberhive-real-build-manual-${{ github.sha }}-run${{ github.run_id }}' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
+grep -n 'include-hidden-files: true' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
+grep -n 'if-no-files-found: error' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
+grep -n 'retention-days: 30' .github/workflows/live-usb-real-image-build-manual.yml >/dev/null
 if grep -n 'path: \.cyberhive-live-real-build/$' .github/workflows/live-usb-real-image-build-manual.yml; then
   echo 'manual workflow must not upload the build work directory' >&2
   exit 1
@@ -171,5 +179,7 @@ fi
 grep -n '^Proposed$' docs/adr/ADR-0008-live-usb-real-image-build-gate.md >/dev/null
 grep -n 'File existence is not acceptance' docs/adr/ADR-0008-live-usb-real-image-build-gate.md >/dev/null
 grep -n 'ISO build: NOT RUN BY PR' docs/work-blocks/WB-HIVE-BOOT-0004-real-image-build-gate.md >/dev/null
+grep -n 'source_commit must resolve to an exact Git commit' docs/work-blocks/WB-HIVE-BOOT-0004-real-image-build-gate.md >/dev/null
+grep -n 'manual workflow evidence upload is fail-closed' docs/runbooks/live-usb-real-image-build-gate.md >/dev/null
 
 echo 'CyberHIVE live USB real image build gate validation passed'
