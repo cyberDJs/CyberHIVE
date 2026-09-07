@@ -13,6 +13,7 @@ Required:
 - clean checkout of the target source commit,
 - disposable local builder or isolated CI runner,
 - Debian Live build tooling available as `lb`,
+- Git available so `source_commit` can resolve to an exact commit,
 - a SHA-256 tool available as `sha256sum`, `shasum` or `openssl`,
 - enough disk space for a Live ISO build,
 - no project secrets in the builder environment,
@@ -22,6 +23,8 @@ The GitHub-hosted manual workflow provisions these prerequisites inside an
 ephemeral Debian Bookworm container with only the mount capability required by
 live-build. The container mounts only the checked-out repository workspace and
 is discarded after the build. Artifact upload excludes the temporary rootfs.
+
+The manual workflow evidence upload is fail-closed: if the build is requested and no evidence files are present, artifact upload must fail instead of warning.
 
 Approval token:
 
@@ -46,6 +49,12 @@ Length:
 ```
 
 The wrapper must refuse unsafe labels before creating build output.
+
+## Source commit policy
+
+`source_commit` must be the exact Git commit used for the build.
+
+The wrapper must refuse to create build output when the source commit cannot be resolved. `UNKNOWN` is not acceptable for successful image evidence.
 
 ## Command
 
@@ -108,6 +117,7 @@ Confirm:
 
 - manifest `status` is `ok` or `failed`,
 - `build_executed` is `true`,
+- `source_commit` is an exact Git commit and not `UNKNOWN`,
 - `usb_written` is `false`,
 - `hardware_booted` is `false`,
 - `runtime_verified` is `false`,
