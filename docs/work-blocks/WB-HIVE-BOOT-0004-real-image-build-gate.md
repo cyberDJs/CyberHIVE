@@ -38,7 +38,7 @@ Out of scope:
 
 ## Authorization boundary
 
-The repository change defines a gate. It does not itself run the image build.
+The repository change defines a gate. It does not make ordinary PR validation run the image build.
 
 A future build run requires the exact approval token:
 
@@ -79,6 +79,8 @@ A successful build gate run must produce or preserve:
 - safe builder label and OS summary,
 - explicit negative claims for USB write, boot, runtime verification, deployment and ADR acceptance.
 
+`source_commit` must resolve to an exact Git commit before build output is created. A real image build must fail closed if the source commit cannot be resolved.
+
 ## Required negative claims
 
 ```text
@@ -95,10 +97,11 @@ ADR accepted: NO
 - Real build wrapper requires the exact build-only token.
 - Real build wrapper refuses to run without the token before creating output.
 - Real build wrapper refuses unsafe builder labels before creating output.
+- Real build wrapper refuses to continue when `source_commit` cannot be resolved to an exact Git commit.
 - Build output remains inside `.cyberhive-live-real-build/`.
 - No output-directory override exists for this gate.
 - Build evidence fails closed when no SHA-256 tool exists.
-- Success evidence cannot use `UNKNOWN` for image SHA-256, build-log SHA-256 or manifest sidecar hash.
+- Success evidence cannot use `UNKNOWN` for image SHA-256, build-log SHA-256, manifest sidecar hash or source commit.
 - Build script contains no USB/media write command.
 - Manifest contract from `WB-HIVE-BOOT-0003` is reused.
 - CI validation does not run a real image build.
@@ -110,7 +113,8 @@ ADR accepted: NO
 ## Stop line
 
 ```text
-ISO build: NOT RUN BY PR
+ISO build: NOT RUN BY PR VALIDATION
+approved:image-build-only label run: IMAGE BUILD ONLY
 USB write: NOT AUTHORIZED
 hardware boot: NOT CLAIMED
 runtime verification: NOT CLAIMED
