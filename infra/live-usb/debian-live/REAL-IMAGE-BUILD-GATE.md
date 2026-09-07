@@ -2,7 +2,7 @@
 
 ## Status
 
-Gate definition only in PR context. The PR validation workflow does not build an ISO.
+Gate definition in PR context. Ordinary PR validation does not build an ISO, but an explicitly approved `approved:image-build-only` label event may run an image-only build for the exact PR head.
 
 ## Candidate path
 
@@ -44,6 +44,12 @@ A-Z a-z 0-9 . _ : @ -
 
 The wrapper must refuse unsafe labels before creating build output.
 
+## Source commit
+
+The wrapper must resolve the exact Git source commit before creating build output.
+
+`source_commit: UNKNOWN` is not valid success evidence.
+
 ## Output directory
 
 The canonical output directory is fixed:
@@ -56,7 +62,7 @@ No output-directory override is supported by this gate.
 
 ## Tooling expectation
 
-The first implementation expects a builder with `lb` available and one of these SHA-256 tools available:
+The first implementation expects a builder with `lb` available, `git` available, and one of these SHA-256 tools available:
 
 ```text
 sha256sum
@@ -100,7 +106,7 @@ The final manifest hash must be external:
 <image-name>.manifest.json.sha256
 ```
 
-Success evidence must fail closed when required SHA-256 evidence cannot be produced.
+Success evidence must fail closed when required SHA-256 evidence or the exact source commit cannot be produced.
 
 ## Evidence boundary
 
