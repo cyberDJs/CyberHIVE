@@ -63,7 +63,11 @@ Explicitly out of scope:
 
 The build gate must fail closed when SHA-256 evidence cannot be produced.
 
+The build gate must fail closed when the exact Git source commit cannot be resolved. A success manifest with `source_commit: UNKNOWN` is not valid evidence.
+
 The build gate must reject unsafe builder labels before creating output. Builder labels are evidence metadata, not secrets.
+
+Manual and PR-label evidence uploads must be fail-closed when an approved build is requested and expected evidence files are absent.
 
 ## Verification
 
@@ -73,6 +77,7 @@ Before acceptance, the project needs:
 - CI validation of the gate boundaries,
 - no-token refusal evidence from the validator,
 - unsafe-label refusal evidence from the validator,
+- source-commit refusal evidence from the wrapper contract,
 - one explicit image-only build attempt receipt,
 - manifest and sidecar hash evidence,
 - confirmation that no USB/boot/runtime/deploy claims were made by the build gate.
