@@ -61,6 +61,10 @@ source_commit='UNKNOWN'
 if command -v git >/dev/null 2>&1 && git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   source_commit=$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || printf '%s' 'UNKNOWN')
 fi
+if [ "$source_commit" = 'UNKNOWN' ]; then
+  echo 'refusing real image build: source commit could not be resolved' >&2
+  exit 6
+fi
 
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 build_id="cyberhive-live-usb-v0.1-amd64-$stamp"
