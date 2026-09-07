@@ -57,16 +57,18 @@ jobs:
             --env CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL \
             --env CYBERHIVE_REAL_IMAGE_BUILDER_LABEL \
             debian:bookworm-slim \
-            sh -c 'apt-get update && apt-get install -y --no-install-recommends live-build ca-certificates rsync xorriso isolinux syslinux-common squashfs-tools && sh infra/live-usb/debian-live/build-real-image.sh'
+            sh -c 'apt-get update && apt-get install -y --no-install-recommends live-build ca-certificates git rsync xorriso isolinux syslinux-common squashfs-tools && git config --global --add safe.directory /workspace && sh infra/live-usb/debian-live/build-real-image.sh'
       - name: Upload build evidence
         if: ${{ always() && github.event.inputs.run_build == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: cyberhive-live-real-build-evidence
+          name: cyberhive-real-build-manual-${{ github.sha }}-run${{ github.run_id }}
           path: |
             .cyberhive-live-real-build/*.iso
             .cyberhive-live-real-build/*.sha256
             .cyberhive-live-real-build/*.manifest.json
             .cyberhive-live-real-build/*.build-log.txt
             .cyberhive-live-real-build/*.packages.txt
-          if-no-files-found: warn
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
