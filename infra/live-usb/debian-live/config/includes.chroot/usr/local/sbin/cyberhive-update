@@ -28,8 +28,8 @@ fi
 
 work="$persist/cache/ota.$$"
 slot_mount=/run/cyberhive/slot-target
-slot_mounted='false'
 efi_mount=/run/cyberhive/efi-update
+slot_mounted='false'
 efi_mounted='false'
 cleanup() {
   if [ "$slot_mounted" = 'true' ]; then umount "$slot_mount" 2>/dev/null || true; fi
@@ -66,6 +66,19 @@ read_sequence_file() {
   printf '%s\n' "$value"
 }
 
+clear_pending_state() {
+  rm -f \
+    "$otadir/pending-channel.json" \
+    "$otadir/pending-channel.json.sig" \
+    "$otadir/pending-source-commit" \
+    "$otadir/pending-sequence" \
+    "$otadir/pending-release-id" \
+    "$otadir/pending-slot" \
+    "$otadir/pending-previous-slot" \
+    "$otadir/pending-phase" \
+    "$otadir/commit-transaction.json"
+}
+
 current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
 case "$current" in
   A) inactive=B; inactive_label="$CYBERHIVE_SLOT_B_LABEL" ;;
@@ -99,22 +112,14 @@ mounted_state=$(printf '%s' "$mounted_state" | sed 's/\[.*$//')
 }
 
 otadir="$persist/state/ota"
-mkdir -p "$work" "$otadir"
-if [ -s "$otadir/pending-slot" ] \
-   || [ -s "$otadir/pending-release-id" ] \
-   || [ -s "$otadir/pending-sequence" ] \
-   || [ -s "$otadir/pending-phase" ]; then
-  pending_slot=$(cat "$otadir/pending-slot" 2>/dev/null || true)
-  pending_release=$(cat "$otadir/pending-release-id" 2>/dev/null || true)
-  pending_phase=$(cat "$otadir/pending-phase" 2>/dev/null || true)
-  echo "refusing OTA restage: inactive slot already armed or pending; slot=${pending_slot:-unknown} release=${pending_release:-unknown} phase=${pending_phase:-unknown}" >&2
-  exit 4
-fi
-
-mkdir -p "$efi_mount"
+mkdir -p "$work" "$otadir" "$efi_mount"
 mount -o ro,nodev,nosuid,noexec "$efi_dev" "$efi_mount"
 efi_mounted='true'
 envfile="$efi_mount/cyberhive/grubenv"
+efi_pending_slot=''
+efi_pending_release=''
+efi_previous_slot=''
+efi_tries=''
 if [ -f "$envfile" ]; then
   efi_state=$(grub-editenv "$envfile" list) || {
     echo 'refusing OTA restage: EFI grubenv unreadable' >&2
@@ -134,6 +139,29 @@ if [ -f "$envfile" ]; then
 fi
 umount "$efi_mount"
 efi_mounted='false'
+
+pending_slot=$(cat "$otadir/pending-slot" 2>/dev/null || true)
+pending_release=$(cat "$otadir/pending-release-id" 2>/dev/null || true)
+pending_sequence=$(cat "$otadir/pending-sequence" 2>/dev/null || true)
+pending_phase=$(cat "$otadir/pending-phase" 2>/dev/null || true)
+if [ -n "$pending_slot" ] \
+   || [ -n "$pending_release" ] \
+   || [ -n "$pending_sequence" ] \
+   || [ -n "$pending_phase" ]; then
+  if [ "$pending_phase" = 'staging' ] \
+     || [ -z "$pending_slot" ] \
+     || [ -z "$pending_release" ] \
+     || [ -z "$pending_sequence" ] \
+     || [ "$pending_phase" != 'armed' ]; then
+    echo "clearing incomplete unarmed pending STATE journal; slot=${pending_slot:-unknown} release=${pending_release:-unknown} phase=${pending_phase:-unknown}" >&2
+    clear_pending_state
+    sync
+  else
+    echo "refusing OTA restage: inactive slot already armed or pending; slot=${pending_slot:-unknown} release=${pending_release:-unknown} phase=${pending_phase:-unknown}" >&2
+    exit 4
+  fi
+fi
+
 manifest="$work/channel.json"
 sig="$work/channel.json.sig"
 bundle="$work/slot.tar"
@@ -223,6 +251,8 @@ sync -f "$slot_mount" 2>/dev/null || sync
 umount "$slot_mount"
 slot_mounted='false'
 
+atomic_text 'staging' "$otadir/pending-phase"
+sync
 atomic_copy "$manifest" "$otadir/pending-channel.json"
 atomic_copy "$sig" "$otadir/pending-channel.json.sig"
 atomic_text "$source_commit" "$otadir/pending-source-commit"
