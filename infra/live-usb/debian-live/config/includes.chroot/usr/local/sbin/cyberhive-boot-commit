@@ -360,6 +360,21 @@ if [ -z "$pending" ] \
   fi
 fi
 
+candidate='false'
+if [ "$pending" = "$current" ]; then
+  candidate='true'
+  positive_sequence "$state_pending_sequence" || state_pending_sequence=''
+  if [ "$state_pending_slot" != "$current" ] \
+     || [ -z "$state_pending_release" ] \
+     || [ -z "$state_pending_sequence" ] \
+     || [ "$state_pending_release" != "$pending_release" ]; then
+    quarantine_release "$state_pending_release" "$state_pending_sequence" incomplete-pending-metadata
+    record_health fail incomplete-pending-metadata
+    sync
+    rollback_candidate_reboot incomplete-pending-metadata
+  fi
+fi
+
 pending_state_mismatch='false'
 if [ -n "$state_pending_release" ] && [ "$pending" != "$state_pending_slot" ]; then
   pending_state_mismatch='true'
@@ -398,21 +413,6 @@ if [ -n "$state_pending_release" ]; then
         exit 2
       fi
     fi
-  fi
-fi
-
-candidate='false'
-if [ "$pending" = "$current" ]; then
-  candidate='true'
-  positive_sequence "$state_pending_sequence" || state_pending_sequence=''
-  if [ "$state_pending_slot" != "$current" ] \
-     || [ -z "$state_pending_release" ] \
-     || [ -z "$state_pending_sequence" ] \
-     || [ "$state_pending_release" != "$pending_release" ]; then
-    quarantine_release "$state_pending_release" "$state_pending_sequence" incomplete-pending-metadata
-    record_health fail incomplete-pending-metadata
-    sync
-    rollback_candidate_reboot incomplete-pending-metadata
   fi
 fi
 
