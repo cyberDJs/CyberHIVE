@@ -103,7 +103,11 @@ commit_candidate_efi_or_reboot() {
     if grub-editenv "$envfile" set "current_slot=$current" 'pending_slot=' 'previous_slot=' 'tries=' 'pending_release_id='; then
       sync
       efi_ro || true
+      efi_current_slot="$current"
       pending=''
+      previous=''
+      tries=''
+      pending_release=''
       return 0
     fi
     echo 'CyberHIVE boot commit: final EFI commit write failed; rebooting for recovery' >&2
@@ -116,6 +120,29 @@ commit_candidate_efi_or_reboot() {
   sleep 5
   systemctl reboot
   exit 1
+}
+
+normalize_previous_efi_or_fail() {
+  reason=$1
+  if efi_rw; then
+    if grub-editenv "$envfile" set "current_slot=$current" 'pending_slot=' 'previous_slot=' 'tries=' 'pending_release_id='; then
+      sync
+      efi_ro || true
+      efi_current_slot="$current"
+      pending=''
+      previous=''
+      tries=''
+      pending_release=''
+      return 0
+    fi
+    echo "CyberHIVE boot commit: failed to normalize previous-slot EFI state for $reason" >&2
+    efi_ro || true
+  else
+    echo "CyberHIVE boot commit: EFI remount rw failed while normalizing previous-slot state for $reason" >&2
+  fi
+  record_health fail "$reason"
+  sync
+  exit 2
 }
 
 current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
@@ -195,6 +222,9 @@ rollback_malformed_transaction() {
   if [ "$pending" = "$current" ]; then
     rollback_candidate_reboot "$reason"
   fi
+  if [ -n "$pending" ] || [ -n "$previous" ] || [ -n "$tries" ] || [ -n "$pending_release" ]; then
+    normalize_previous_efi_or_fail "$reason"
+  fi
   exit 1
 }
 
@@ -237,6 +267,13 @@ if [ -f "$transaction" ]; then
     exit 0
   fi
 
+  if [ "$efi_current_slot" != "$current" ] \
+     || [ -n "$pending" ] \
+     || [ -n "$previous" ] \
+     || [ -n "$tries" ] \
+     || [ -n "$pending_release" ]; then
+    normalize_previous_efi_or_fail recovered-previous-slot
+  fi
   if [ -n "$tx_old_release" ]; then atomic_text "$tx_old_release" "$otadir/current-release-id"; else rm -f "$otadir/current-release-id"; fi
   case "$tx_old_sequence" in *[!0-9]*|'') rm -f "$otadir/current-sequence" ;; *) atomic_text "$tx_old_sequence" "$otadir/current-sequence" ;; esac
   quarantine_release "$tx_new_release" "$tx_new_sequence" incomplete-commit-rollback
@@ -268,6 +305,13 @@ fi
 
 if [ -n "$state_pending_release" ] && [ "$pending" != "$state_pending_slot" ]; then
   if [ "$current" != "$state_pending_slot" ]; then
+    if [ "$efi_current_slot" != "$current" ] \
+       || [ -n "$pending" ] \
+       || [ -n "$previous" ] \
+       || [ -n "$tries" ] \
+       || [ -n "$pending_release" ]; then
+      normalize_previous_efi_or_fail rollback-detected
+    fi
     quarantine_release "$state_pending_release" "$state_pending_sequence" rollback-detected
     clear_pending_state
     record_health pass rollback-detected
@@ -358,4 +402,3 @@ if [ "$candidate" = 'true' ]; then
   rollback_candidate_reboot health-gate
 fi
 sync
-exit 1
