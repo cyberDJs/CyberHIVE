@@ -104,6 +104,7 @@ commit_candidate_efi_or_reboot() {
       sync
       efi_ro || true
       efi_current_slot="$current"
+      efi_current_slot_missing='false'
       pending=''
       previous=''
       tries=''
@@ -129,6 +130,7 @@ normalize_previous_efi_or_fail() {
       sync
       efi_ro || true
       efi_current_slot="$current"
+      efi_current_slot_missing='false'
       pending=''
       previous=''
       tries=''
@@ -192,7 +194,12 @@ pending=$(printf '%s\n' "$env_state" | sed -n 's/^pending_slot=//p' | head -n 1)
 pending_release=$(printf '%s\n' "$env_state" | sed -n 's/^pending_release_id=//p' | head -n 1)
 previous=$(printf '%s\n' "$env_state" | sed -n 's/^previous_slot=//p' | head -n 1)
 tries=$(printf '%s\n' "$env_state" | sed -n 's/^tries=//p' | head -n 1)
-case "$efi_current_slot" in ''|A|B) ;; *) echo 'CyberHIVE boot commit: invalid EFI current slot' >&2; exit 2 ;; esac
+efi_current_slot_missing='false'
+case "$efi_current_slot" in
+  A|B) ;;
+  '') efi_current_slot_missing='true' ;;
+  *) echo 'CyberHIVE boot commit: invalid EFI current slot' >&2; exit 2 ;;
+esac
 
 if [ "$state_available" != 'true' ]; then
   if [ "$pending" = "$current" ]; then
@@ -210,6 +217,13 @@ transaction="$otadir/commit-transaction.json"
 state_pending_slot=$(cat "$otadir/pending-slot" 2>/dev/null || true)
 state_pending_release=$(cat "$otadir/pending-release-id" 2>/dev/null || true)
 state_pending_sequence=$(cat "$otadir/pending-sequence" 2>/dev/null || true)
+
+if [ "$efi_current_slot_missing" = 'true' ] && [ -z "$pending" ] && [ ! -f "$transaction" ]; then
+  echo 'CyberHIVE boot commit: empty EFI current slot without recoverable transaction' >&2
+  record_health fail empty-efi-current-slot
+  sync
+  exit 2
+fi
 
 rollback_malformed_transaction() {
   reason=$1
