@@ -16,13 +16,13 @@ positive_end = src.index('\n}\n\nclear_pending_state() {', positive_start) + 3
 positive_sequence = src[positive_start:positive_end]
 
 start = src.index("if [ \"$efi_current_slot_missing\" = 'true' ] && [ ! -f \"$transaction\" ]; then")
-end = src.index("candidate='false'")
+end = src.index("health_ok='false'")
 boot_guard = src[start:end]
 
 def q(value):
     return shlex.quote(str(value))
 
-def run_guard_case(*, pending, state_slot, state_release, state_sequence, pending_release='release-1', current='A'):
+def run_guard_case(*, pending, state_slot, state_release, state_sequence, pending_release='release-1', current='A', efi_current_slot='', efi_current_slot_missing='true'):
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         persist = tmp / 'persist'
@@ -34,8 +34,8 @@ persist={q(persist)}
 otadir={q(ota)}
 transaction="$otadir/commit-transaction.json"
 current={q(current)}
-efi_current_slot_missing='true'
-efi_current_slot=''
+efi_current_slot_missing={q(efi_current_slot_missing)}
+efi_current_slot={q(efi_current_slot)}
 pending={q(pending)}
 pending_release={q(pending_release)}
 previous=''
@@ -75,6 +75,7 @@ require('positive_sequence()')
 require('positive_sequence "$state_pending_sequence"')
 require('rollback_candidate_reboot empty-current-slot-pending-candidate')
 require('rollback_candidate_reboot unrecoverable-pending-efi-current-slot')
+require('rollback_candidate_reboot incomplete-pending-metadata')
 require('positive_sequence "$state_pending_sequence" || state_pending_sequence=')
 require(': # allowed only because the pending slot must flow into rollback-detected repair below')
 require('[ "$efi_current_slot_missing" = \'true\' ]')
@@ -85,8 +86,12 @@ require('if [ -n "$state_pending_release" ] && [ "$pending" != "$state_pending_s
 require('record_health fail "$empty_current_slot_reason"')
 require('exit 2')
 
-assert boot_guard.index('rollback_candidate_reboot empty-current-slot-pending-candidate') < src.index("candidate='false'")
-assert boot_guard.index('rollback_candidate_reboot unrecoverable-pending-efi-current-slot') < src.index("candidate='false'")
+candidate_guard_index = src.index("candidate='false'")
+rollback_detected_index = src.index("pending_state_mismatch='false'")
+assert candidate_guard_index < rollback_detected_index
+assert boot_guard.index('rollback_candidate_reboot empty-current-slot-pending-candidate') < src.index("health_ok='false'")
+assert boot_guard.index('rollback_candidate_reboot unrecoverable-pending-efi-current-slot') < src.index("health_ok='false'")
+assert boot_guard.index('rollback_candidate_reboot incomplete-pending-metadata') < rollback_detected_index
 assert 'case "$pending" in' in boot_guard
 assert "*)\n      empty_current_slot_reason='unrecoverable-pending-efi-current-slot'" in boot_guard
 
@@ -106,6 +111,19 @@ missing_metadata = run_guard_case(pending='A', state_slot='', state_release='', 
 assert missing_metadata['returncode'] == 99, missing_metadata
 assert missing_metadata['rollback'] == 'unrecoverable-pending-efi-current-slot', missing_metadata
 assert not missing_metadata['ordinary'], missing_metadata
+
+valid_current_slot_mismatch = run_guard_case(
+    pending='A',
+    state_slot='B',
+    state_release='release-1',
+    state_sequence='7',
+    efi_current_slot='A',
+    efi_current_slot_missing='false',
+)
+assert valid_current_slot_mismatch['returncode'] == 99, valid_current_slot_mismatch
+assert valid_current_slot_mismatch['rollback'] == 'incomplete-pending-metadata', valid_current_slot_mismatch
+assert 'reason=incomplete-pending-metadata' in valid_current_slot_mismatch['health'], valid_current_slot_mismatch
+assert not valid_current_slot_mismatch['ordinary'], valid_current_slot_mismatch
 
 other_slot_repair = run_guard_case(pending='B', state_slot='B', state_release='release-1', state_sequence='7')
 assert other_slot_repair['returncode'] == 98, other_slot_repair
