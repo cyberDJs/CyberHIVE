@@ -226,12 +226,23 @@ if [ "$efi_current_slot_missing" = 'true' ] && [ ! -f "$transaction" ]; then
       ;;
     A|B)
       case "$state_pending_sequence" in *[!0-9]*|'') pending_recoverable='false' ;; *) pending_recoverable='true' ;; esac
-      if [ "$pending" = "$current" ] \
-         && [ "$state_pending_slot" = "$current" ] \
-         && [ -n "$state_pending_release" ] \
-         && [ "$state_pending_release" = "$pending_release" ] \
-         && [ "$pending_recoverable" = 'true' ]; then
-        :
+      if [ "$pending" = "$current" ]; then
+        if [ "$state_pending_slot" = "$current" ] \
+           && [ -n "$state_pending_release" ] \
+           && [ "$state_pending_release" = "$pending_release" ] \
+           && [ "$pending_recoverable" = 'true' ]; then
+          quarantine_release "$state_pending_release" "$state_pending_sequence" empty-current-slot-pending-candidate
+          record_health fail empty-current-slot-pending-candidate
+          sync
+          rollback_candidate_reboot empty-current-slot-pending-candidate
+        else
+          empty_current_slot_reason='unrecoverable-pending-efi-current-slot'
+        fi
+      elif [ "$state_pending_slot" = "$pending" ] \
+           && [ -n "$state_pending_release" ] \
+           && [ "$state_pending_release" = "$pending_release" ] \
+           && [ "$pending_recoverable" = 'true' ]; then
+        : # allowed only because the pending slot must flow into rollback-detected repair below
       else
         empty_current_slot_reason='unrecoverable-pending-efi-current-slot'
       fi
@@ -340,34 +351,38 @@ if [ -z "$pending" ] \
   fi
 fi
 
-if [ -n "$state_pending_release" ] && [ "$pending" != "$state_pending_slot" ]; then
-  if [ "$current" != "$state_pending_slot" ]; then
-    if [ "$efi_current_slot" != "$current" ] \
-       || [ -n "$pending" ] \
-       || [ -n "$previous" ] \
-       || [ -n "$tries" ] \
-       || [ -n "$pending_release" ]; then
-      normalize_previous_efi_or_fail rollback-detected
-    fi
-    quarantine_release "$state_pending_release" "$state_pending_sequence" rollback-detected
-    clear_pending_state
-    record_health pass rollback-detected
-    sync
-    state_pending_slot=''
-    state_pending_release=''
-    state_pending_sequence=''
-  else
-    committed_release=$(cat "$otadir/current-release-id" 2>/dev/null || true)
-    committed_sequence=$(cat "$otadir/current-sequence" 2>/dev/null || true)
-    if [ "$committed_release" = "$state_pending_release" ] && [ "$committed_sequence" = "$state_pending_sequence" ]; then
+if [ -n "$state_pending_release" ]; then
+  if [ "$pending" != "$state_pending_slot" ] \
+     || { [ -n "$pending" ] && [ "$current" != "$state_pending_slot" ]; }; then
+    if [ "$current" != "$state_pending_slot" ]; then
+      if [ "$efi_current_slot" != "$current" ] \
+         || [ "$efi_current_slot_missing" = 'true' ] \
+         || [ -n "$pending" ] \
+         || [ -n "$previous" ] \
+         || [ -n "$tries" ] \
+         || [ -n "$pending_release" ]; then
+        normalize_previous_efi_or_fail rollback-detected
+      fi
+      quarantine_release "$state_pending_release" "$state_pending_sequence" rollback-detected
       clear_pending_state
+      record_health pass rollback-detected
       sync
       state_pending_slot=''
       state_pending_release=''
       state_pending_sequence=''
     else
-      echo 'CyberHIVE boot commit: inconsistent pending STATE/EFI transaction' >&2
-      exit 2
+      committed_release=$(cat "$otadir/current-release-id" 2>/dev/null || true)
+      committed_sequence=$(cat "$otadir/current-sequence" 2>/dev/null || true)
+      if [ "$committed_release" = "$state_pending_release" ] && [ "$committed_sequence" = "$state_pending_sequence" ]; then
+        clear_pending_state
+        sync
+        state_pending_slot=''
+        state_pending_release=''
+        state_pending_sequence=''
+      else
+        echo 'CyberHIVE boot commit: inconsistent pending STATE/EFI transaction' >&2
+        exit 2
+      fi
     fi
   fi
 fi
