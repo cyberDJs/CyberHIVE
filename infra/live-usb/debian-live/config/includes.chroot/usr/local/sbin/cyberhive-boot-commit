@@ -351,8 +351,13 @@ if [ -z "$pending" ] \
   fi
 fi
 
+pending_state_mismatch='false'
+if [ -n "$state_pending_release" ] && [ "$pending" != "$state_pending_slot" ]; then
+  pending_state_mismatch='true'
+fi
+
 if [ -n "$state_pending_release" ]; then
-  if [ "$pending" != "$state_pending_slot" ] \
+  if [ "$pending_state_mismatch" = 'true' ] \
      || { [ -n "$pending" ] && [ "$current" != "$state_pending_slot" ]; }; then
     if [ "$current" != "$state_pending_slot" ]; then
       if [ "$efi_current_slot" != "$current" ] \
