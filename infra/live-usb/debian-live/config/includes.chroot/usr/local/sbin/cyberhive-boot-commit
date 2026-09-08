@@ -43,6 +43,12 @@ read_sequence_file() {
   printf '%s\n' "$value"
 }
 
+positive_sequence() {
+  value=$1
+  case "$value" in *[!0-9]*|'') return 1 ;; esac
+  [ "$value" -gt 0 ]
+}
+
 clear_pending_state() {
   rm -f \
     "$otadir/pending-channel.json" \
@@ -225,7 +231,7 @@ if [ "$efi_current_slot_missing" = 'true' ] && [ ! -f "$transaction" ]; then
       empty_current_slot_reason='empty-efi-current-slot'
       ;;
     A|B)
-      case "$state_pending_sequence" in *[!0-9]*|'') pending_recoverable='false' ;; *) pending_recoverable='true' ;; esac
+      if positive_sequence "$state_pending_sequence"; then pending_recoverable='true'; else pending_recoverable='false'; fi
       if [ "$pending" = "$current" ]; then
         if [ "$state_pending_slot" = "$current" ] \
            && [ -n "$state_pending_release" ] \
@@ -236,7 +242,10 @@ if [ "$efi_current_slot_missing" = 'true' ] && [ ! -f "$transaction" ]; then
           sync
           rollback_candidate_reboot empty-current-slot-pending-candidate
         else
-          empty_current_slot_reason='unrecoverable-pending-efi-current-slot'
+          quarantine_release "$state_pending_release" "$state_pending_sequence" unrecoverable-pending-efi-current-slot
+          record_health fail unrecoverable-pending-efi-current-slot
+          sync
+          rollback_candidate_reboot unrecoverable-pending-efi-current-slot
         fi
       elif [ "$state_pending_slot" = "$pending" ] \
            && [ -n "$state_pending_release" ] \
@@ -395,7 +404,7 @@ fi
 candidate='false'
 if [ "$pending" = "$current" ]; then
   candidate='true'
-  case "$state_pending_sequence" in *[!0-9]*|'') state_pending_sequence='' ;; esac
+  positive_sequence "$state_pending_sequence" || state_pending_sequence=''
   if [ "$state_pending_slot" != "$current" ] \
      || [ -z "$state_pending_release" ] \
      || [ -z "$state_pending_sequence" ] \
