@@ -21,7 +21,11 @@ TOKEN_FILE = CONTROL / 'web-session-token'
 ROLE_FILE = CONTROL / 'role'
 PORT = int(os.environ.get('CYBERHIVE_WEB_PORT', '80'))
 ROLES = {'controller-worker', 'worker', 'devbridge-request', 'offline-diagnostics', 'rescue'}
+PAIRING_ATTEMPT_WINDOW = 60
+PAIRING_PEER_ATTEMPT_LIMIT = 5
+PAIRING_GLOBAL_ATTEMPT_LIMIT = 30
 ATTEMPTS = {}
+GLOBAL_ATTEMPTS = []
 ATTEMPTS_LOCK = threading.Lock()
 TAILNETS = (ipaddress.ip_network('100.64.0.0/10'), ipaddress.ip_network('fd7a:115c:a1e0::/48'))
 TRUSTED_HOST_NAMES = {'localhost', 'cyberhive', 'cyberhive.local'}
@@ -219,13 +223,14 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/api/pair':
             now = time.monotonic(); peer = self.client_address[0]
             with ATTEMPTS_LOCK:
-                recent = [t for t in ATTEMPTS.get(peer, []) if now - t < 60]
-                if len(recent) >= 5:
+                recent = [t for t in ATTEMPTS.get(peer, []) if now - t < PAIRING_ATTEMPT_WINDOW]
+                GLOBAL_ATTEMPTS[:] = [t for t in GLOBAL_ATTEMPTS if now - t < PAIRING_ATTEMPT_WINDOW]
+                limited = len(recent) >= PAIRING_PEER_ATTEMPT_LIMIT or len(GLOBAL_ATTEMPTS) >= PAIRING_GLOBAL_ATTEMPT_LIMIT
+                if limited:
                     ATTEMPTS[peer] = recent
-                    limited = True
                 else:
                     ATTEMPTS[peer] = recent + [now]
-                    limited = False
+                    GLOBAL_ATTEMPTS.append(now)
             if limited:
                 self.send_json(HTTPStatus.TOO_MANY_REQUESTS, {'error': 'pairing rate limit exceeded'}); return
             try:
