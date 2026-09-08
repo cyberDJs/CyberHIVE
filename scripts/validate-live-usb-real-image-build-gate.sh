@@ -179,7 +179,7 @@ fi
 grep -n '^Proposed$' docs/adr/ADR-0008-live-usb-real-image-build-gate.md >/dev/null
 grep -n 'File existence is not acceptance' docs/adr/ADR-0008-live-usb-real-image-build-gate.md >/dev/null
 grep -n 'ISO build: NOT RUN BY PR' docs/work-blocks/WB-HIVE-BOOT-0004-real-image-build-gate.md >/dev/null
-grep -n 'source_commit must resolve to an exact Git commit' docs/work-blocks/WB-HIVE-BOOT-0004-real-image-build-gate.md >/dev/null
+grep -n '`source_commit` must resolve to an exact Git commit' docs/work-blocks/WB-HIVE-BOOT-0004-real-image-build-gate.md >/dev/null
 grep -n 'manual workflow evidence upload is fail-closed' docs/runbooks/live-usb-real-image-build-gate.md >/dev/null
 
 echo 'CyberHIVE live USB real image build gate validation passed'
