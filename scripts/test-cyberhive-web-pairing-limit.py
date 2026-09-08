@@ -2,7 +2,6 @@
 import importlib.machinery
 import importlib.util
 import os
-import sys
 import unittest.mock
 from http import HTTPStatus
 from pathlib import Path
@@ -49,11 +48,16 @@ module.ATTEMPTS.clear()
 module.GLOBAL_ATTEMPTS.clear()
 
 limit = module.PAIRING_GLOBAL_ATTEMPT_LIMIT
-for index in range(limit):
-    status, payload = pair_attempt(f'192.168.55.{index + 1}')
-    assert status == HTTPStatus.UNAUTHORIZED, (index, status, payload)
+peers = [f'192.168.55.{index + 1}' for index in range(limit)]
+for index, peer in enumerate(peers):
+    status, payload = pair_attempt(peer)
+    assert status == HTTPStatus.UNAUTHORIZED, (index, peer, status, payload)
+
+assert len(module.GLOBAL_ATTEMPTS) == limit, module.GLOBAL_ATTEMPTS
+assert set(module.ATTEMPTS) == set(peers), module.ATTEMPTS
+assert all(len(attempts) == 1 for attempts in module.ATTEMPTS.values()), module.ATTEMPTS
 
 status, payload = pair_attempt('192.168.55.250')
 assert status == HTTPStatus.TOO_MANY_REQUESTS, (status, payload)
 assert payload == {'error': 'pairing rate limit exceeded'}, payload
-print('CyberHIVE web pairing global limit behavior passed')
+print('CyberHIVE web pairing global multi-IP limit behavior passed')
