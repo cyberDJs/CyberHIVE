@@ -79,7 +79,7 @@ A successful build gate run must produce or preserve:
 - safe builder label and OS summary,
 - explicit negative claims for USB write, boot, runtime verification, deployment and ADR acceptance.
 
-source_commit must resolve to an exact Git commit before build output is created. A real image build must fail closed if the source commit cannot be resolved.
+`source_commit` must resolve to an exact Git commit before build output is created. A real image build must fail closed if the source commit cannot be resolved.
 
 ## Required negative claims
 
