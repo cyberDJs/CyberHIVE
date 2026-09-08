@@ -218,11 +218,34 @@ state_pending_slot=$(cat "$otadir/pending-slot" 2>/dev/null || true)
 state_pending_release=$(cat "$otadir/pending-release-id" 2>/dev/null || true)
 state_pending_sequence=$(cat "$otadir/pending-sequence" 2>/dev/null || true)
 
-if [ "$efi_current_slot_missing" = 'true' ] && [ -z "$pending" ] && [ ! -f "$transaction" ]; then
-  echo 'CyberHIVE boot commit: empty EFI current slot without recoverable transaction' >&2
-  record_health fail empty-efi-current-slot
-  sync
-  exit 2
+if [ "$efi_current_slot_missing" = 'true' ] && [ ! -f "$transaction" ]; then
+  empty_current_slot_reason=''
+  case "$pending" in
+    '')
+      empty_current_slot_reason='empty-efi-current-slot'
+      ;;
+    A|B)
+      case "$state_pending_sequence" in *[!0-9]*|'') pending_recoverable='false' ;; *) pending_recoverable='true' ;; esac
+      if [ "$pending" = "$current" ] \
+         && [ "$state_pending_slot" = "$current" ] \
+         && [ -n "$state_pending_release" ] \
+         && [ "$state_pending_release" = "$pending_release" ] \
+         && [ "$pending_recoverable" = 'true' ]; then
+        :
+      else
+        empty_current_slot_reason='unrecoverable-pending-efi-current-slot'
+      fi
+      ;;
+    *)
+      empty_current_slot_reason='unrecoverable-pending-efi-current-slot'
+      ;;
+  esac
+  if [ -n "$empty_current_slot_reason" ]; then
+    echo "CyberHIVE boot commit: $empty_current_slot_reason" >&2
+    record_health fail "$empty_current_slot_reason"
+    sync
+    exit 2
+  fi
 fi
 
 rollback_malformed_transaction() {
