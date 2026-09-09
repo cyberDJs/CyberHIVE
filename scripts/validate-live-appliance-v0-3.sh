@@ -215,7 +215,9 @@ grep -F 'boot=live components noswap' "$builder" >/dev/null
 python3 - "$builder" <<'PY'
 from pathlib import Path
 import re
+import shlex
 import sys
+
 builder = Path(sys.argv[1]).read_text()
 match = re.search(r"cat >\"\$work/grub\.cfg\" <<'EOGRUB'\n(?P<cfg>.*?)\nEOGRUB\n", builder, re.S)
 if not match:
@@ -237,36 +239,151 @@ for forbidden in ['insmod env', 'cyberhive_efi_candidate', 'cyberhive_efi_count'
     if forbidden in cfg:
         raise AssertionError(f'unsafe GRUB parent fallback remains: {forbidden}')
 
-def prove(cmdpath='', root='', files=(), visible_gpt1=()):
-    boot_disk = ''
-    boot_efi = ''
-    if cmdpath:
-        m = re.match(r'^\(([^,]+),gpt1\)(/.*)?$', cmdpath)
-        if m:
-            boot_disk = m.group(1)
-    if boot_disk:
-        boot_efi = f'{boot_disk},gpt1'
-    if not boot_efi and root:
-        m = re.match(r'^([^,]+),gpt1$', root)
-        if m:
-            root_boot_disk = m.group(1)
-            if f'({root})/cyberhive/grubenv' in files and f'({root})/EFI/BOOT/BOOTX64.EFI' in files:
-                boot_disk = root_boot_disk
-                boot_efi = root
-    # visible_gpt1 is deliberately ignored: uniqueness is not parent proof.
-    if not boot_disk or not boot_efi:
-        return None
-    return boot_disk, boot_efi
+parent_match = re.search(
+    r'(?P<parent>set boot_disk=\nset boot_efi=.*?)\nset efi="\$boot_efi"',
+    cfg,
+    re.S,
+)
+if not parent_match:
+    raise AssertionError('GRUB parent proof block not found')
+parent = parent_match.group('parent')
+if 'for candidate in' in parent or 'search --no-floppy' in parent:
+    raise AssertionError('parent proof must not scan unbound devices')
 
-assert prove(cmdpath='(hd2,gpt1)/EFI/BOOT/BOOTX64.EFI') == ('hd2', 'hd2,gpt1')
-assert prove(cmdpath='/EFI/BOOT/BOOTX64.EFI', root='hd7,gpt1', files={
-    '(hd7,gpt1)/cyberhive/grubenv',
-    '(hd7,gpt1)/EFI/BOOT/BOOTX64.EFI',
-}) == ('hd7', 'hd7,gpt1')
-assert prove(cmdpath='/EFI/BOOT/BOOTX64.EFI', root='hd7,gpt1', files=set()) is None
-for visible in [[], ['hd9,gpt1'], ['hd9,gpt1', 'hd10,gpt1']]:
-    assert prove(cmdpath='', root='', files=set(), visible_gpt1=visible) is None
-print('GRUB EFI parent fallback behavioral model passed')
+parent_lines = [
+    line.strip()
+    for line in parent.splitlines()
+    if line.strip() and not line.strip().startswith('#')
+]
+
+class GrubReboot(Exception):
+    pass
+
+class UnsupportedGrub(Exception):
+    pass
+
+def run_parent_proof(*, cmdpath='', root='', files=()):
+    env = {'cmdpath': cmdpath, 'root': root}
+    files = set(files)
+    stack = []
+
+    def active():
+        return all(stack)
+
+    def expand(value):
+        return re.sub(r'\$([A-Za-z_][A-Za-z0-9_]*)', lambda m: env.get(m.group(1), ''), value)
+
+    def eval_atom(tokens, index):
+        op = tokens[index]
+        arg = expand(tokens[index + 1]) if index + 1 < len(tokens) else ''
+        if op == '-n':
+            return bool(arg), index + 2
+        if op == '-z':
+            return not bool(arg), index + 2
+        if op == '-f':
+            return arg in files, index + 2
+        if index + 2 < len(tokens) and tokens[index + 1] in ('=', '==', '!='):
+            left = expand(tokens[index])
+            right = expand(tokens[index + 2])
+            ok = left == right
+            if tokens[index + 1] == '!=':
+                ok = not ok
+            return ok, index + 3
+        raise UnsupportedGrub(f'unsupported condition atom: {tokens[index:]}')
+
+    def eval_condition(expr):
+        expr = expr.strip()
+        if not (expr.startswith('[') and expr.endswith(']')):
+            raise UnsupportedGrub(f'unsupported if expression: {expr}')
+        tokens = shlex.split(expr[1:-1])
+        if not tokens:
+            raise UnsupportedGrub('empty condition')
+        value, index = eval_atom(tokens, 0)
+        while index < len(tokens):
+            joiner = tokens[index]
+            rhs, index = eval_atom(tokens, index + 1)
+            if joiner == '-a':
+                value = value and rhs
+            elif joiner == '-o':
+                value = value or rhs
+            else:
+                raise UnsupportedGrub(f'unsupported condition joiner: {joiner}')
+        return value
+
+    def run_line(line):
+        if line.startswith('regexp '):
+            parts = shlex.split(line)
+            if len(parts) != 4 or not parts[1].startswith('--set=1:'):
+                raise UnsupportedGrub(f'unsupported regexp statement: {line}')
+            target = parts[1].split(':', 1)[1]
+            pattern = parts[2]
+            subject = expand(parts[3])
+            found = re.match(pattern, subject)
+            env[target] = found.group(1) if found else ''
+            return
+        if line.startswith('set '):
+            assignment = line[4:]
+            if '=' not in assignment:
+                raise UnsupportedGrub(f'unsupported set statement: {line}')
+            key, value = assignment.split('=', 1)
+            env[key] = expand(value.strip('"'))
+            return
+        if line.startswith('echo ') or line.startswith('sleep '):
+            return
+        if line == 'reboot':
+            raise GrubReboot
+        raise UnsupportedGrub(f'unsupported parent-proof statement: {line}')
+
+    try:
+        for line in parent_lines:
+            if line.startswith('if '):
+                if not line.endswith('; then'):
+                    raise UnsupportedGrub(f'unsupported if syntax: {line}')
+                condition = line[3:-6].strip()
+                stack.append(active() and eval_condition(condition))
+                continue
+            if line == 'fi':
+                if not stack:
+                    raise UnsupportedGrub('unexpected fi')
+                stack.pop()
+                continue
+            if active():
+                run_line(line)
+        if stack:
+            raise UnsupportedGrub('unclosed if block')
+    except GrubReboot:
+        return {'status': 'fail-closed', **env}
+    return {'status': 'ok', **env}
+
+cmdpath_ok = run_parent_proof(cmdpath='(hd2,gpt1)/EFI/BOOT/BOOTX64.EFI')
+assert cmdpath_ok['status'] == 'ok'
+assert cmdpath_ok['boot_disk'] == 'hd2'
+assert cmdpath_ok['boot_efi'] == 'hd2,gpt1'
+
+root_ok = run_parent_proof(
+    cmdpath='/EFI/BOOT/BOOTX64.EFI',
+    root='hd7,gpt1',
+    files={
+        '(hd7,gpt1)/cyberhive/grubenv',
+        '(hd7,gpt1)/EFI/BOOT/BOOTX64.EFI',
+    },
+)
+assert root_ok['status'] == 'ok'
+assert root_ok['boot_disk'] == 'hd7'
+assert root_ok['boot_efi'] == 'hd7,gpt1'
+
+missing_marker = run_parent_proof(cmdpath='/EFI/BOOT/BOOTX64.EFI', root='hd7,gpt1')
+assert missing_marker['status'] == 'fail-closed'
+
+for visible_gpt1 in [[], ['hd9,gpt1'], ['hd9,gpt1', 'hd10,gpt1']]:
+    marker_files = set()
+    for dev in visible_gpt1:
+        marker_files.add(f'({dev})/cyberhive/grubenv')
+        marker_files.add(f'({dev})/EFI/BOOT/BOOTX64.EFI')
+    result = run_parent_proof(cmdpath='', root='', files=marker_files)
+    assert result['status'] == 'fail-closed', visible_gpt1
+
+print('GRUB EFI parent proof extracted-block interpreter passed')
 PY
 grep -F 'cyberhive.slot_uuid=$slot_uuid' "$builder" >/dev/null
 grep -F 'slot_uuid_duplicate' "$builder" >/dev/null
