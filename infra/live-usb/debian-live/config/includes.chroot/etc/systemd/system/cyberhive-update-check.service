@@ -1,0 +1,8 @@
+[Unit]
+Description=CyberHIVE signed DEV channel update check
+After=network-online.target tailscaled.service cyberhive-boot-commit.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cyberhive-update-check

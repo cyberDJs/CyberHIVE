@@ -1,0 +1,82 @@
+#!/bin/sh
+set -eu
+
+. /etc/cyberhive/live/config.env
+. /usr/local/lib/cyberhive-device.sh
+
+persist="$CYBERHIVE_PERSIST_ROOT"
+run_state="$CYBERHIVE_STATE_DIR"
+mkdir -p "$persist" "$run_state"
+
+current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
+case "$current" in
+  A|B) ;;
+  *)
+    printf '%s\n' 'invalid-slot' >"$run_state/persistence-state"
+    echo 'cyberhive-persist-init: current CyberHIVE slot unknown' >&2
+    exit 2
+    ;;
+esac
+
+live_dev=$(cyberhive_live_medium_device 2>/dev/null || true)
+if [ -z "$live_dev" ] || ! cyberhive_verify_live_slot "$current" "$live_dev"; then
+  printf '%s\n' 'live-medium-mismatch' >"$run_state/persistence-state"
+  echo 'cyberhive-persist-init: booted live medium does not match declared slot' >&2
+  exit 2
+fi
+parent=$(cyberhive_parent_device "$live_dev" 2>/dev/null || true)
+if [ -z "$parent" ] || ! cyberhive_require_usb_parent "$parent"; then
+  printf '%s\n' 'non-usb-parent' >"$run_state/persistence-state"
+  echo 'cyberhive-persist-init: refusing non-USB persistence parent' >&2
+  exit 2
+fi
+
+state_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
+efi_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
+if [ -z "$state_dev" ] || [ -z "$efi_dev" ]; then
+  printf '%s\n' 'sibling-label-missing-or-ambiguous' >"$run_state/persistence-state"
+  echo 'cyberhive-persist-init: unique STATE/EFI siblings not found on booted USB parent' >&2
+  exit 2
+fi
+
+if mountpoint -q "$persist"; then
+  mounted_state=$(findmnt -nr -o SOURCE --target "$persist" 2>/dev/null || true)
+  mounted_state=$(printf '%s' "$mounted_state" | sed 's/\[.*$//')
+  [ -n "$mounted_state" ] \
+    && [ "$(readlink -f "$mounted_state" 2>/dev/null || printf '%s' "$mounted_state")" = "$(readlink -f "$state_dev" 2>/dev/null || printf '%s' "$state_dev")" ] || {
+    printf '%s\n' 'mounted-state-mismatch' >"$run_state/persistence-state"
+    echo 'cyberhive-persist-init: mounted STATE identity mismatch' >&2
+    exit 2
+  }
+else
+  mount -o rw,nodev,nosuid "$state_dev" "$persist"
+fi
+
+mkdir -p \
+  "$persist/state/network" \
+  "$persist/state/tailscale" \
+  "$persist/state/ssh/host_keys" \
+  "$persist/state/ota" \
+  "$persist/state/evidence" \
+  "$persist/cache"
+chmod 0700 "$persist/state/tailscale" "$persist/state/ssh" "$persist/state/ssh/host_keys" "$persist/state/ota"
+
+bootstrap_keys=/etc/cyberhive/bootstrap/authorized_keys
+persist_keys="$persist/state/ssh/authorized_keys"
+if [ ! -s "$persist_keys" ] && [ -s "$bootstrap_keys" ]; then
+  install -m 0600 -o root -g root "$bootstrap_keys" "$persist_keys"
+fi
+
+if [ -d "$persist/state/network" ]; then
+  install -d -m 0700 /etc/NetworkManager/system-connections
+  find "$persist/state/network" -maxdepth 1 -type f -name '*.nmconnection' -exec cp -p '{}' /etc/NetworkManager/system-connections/ \;
+  chmod 0600 /etc/NetworkManager/system-connections/*.nmconnection 2>/dev/null || true
+fi
+
+install -d -m 0700 /var/lib/tailscale
+if ! mountpoint -q /var/lib/tailscale; then
+  mount --bind "$persist/state/tailscale" /var/lib/tailscale
+fi
+
+printf 'mounted:%s:%s:%s\n' "$state_dev" "$parent" "$current" >"$run_state/persistence-state"
+chmod 0640 "$run_state/persistence-state"

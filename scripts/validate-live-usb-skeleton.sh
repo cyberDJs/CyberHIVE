@@ -67,6 +67,16 @@ case "$live_version" in
     [ -f docs/security/live-appliance-v0-2-safety.md ]
     [ -f scripts/validate-live-appliance-v0-2.sh ]
     ;;
+  0.3.*)
+    grep -R -n '^avahi-daemon$' infra/live-usb/debian-live/config/package-lists >/dev/null
+    grep -R -n 'CYBERHIVE_REMOTE_HELP_DEFAULT="disabled"' infra/live-usb/debian-live >/dev/null
+    [ -f docs/security/live-appliance-v0-2-safety.md ]
+    [ -f scripts/validate-live-appliance-v0-2.sh ]
+    [ -f docs/security/live-appliance-v0-3-safety.md ]
+    [ -f scripts/validate-live-appliance-v0-3.sh ]
+    grep -F 'CYBERHIVE_PERSISTENCE_DEFAULT="usb-state"' "$live_config" >/dev/null
+    grep -F 'CYBERHIVE_STATE_LABEL="CYBERHIVE_STATE"' "$live_config" >/dev/null
+    ;;
   *)
     echo "unsupported live skeleton policy version: $live_version" >&2
     exit 1

@@ -1,6 +1,7 @@
 [Unit]
 Description=CyberHIVE per-boot local onboarding bootstrap
-After=local-fs.target live-config.service
+Requires=cyberhive-persist-init.service
+After=local-fs.target live-config.service cyberhive-persist-init.service
 Before=ssh.service cyberhive-web.service
 
 [Service]

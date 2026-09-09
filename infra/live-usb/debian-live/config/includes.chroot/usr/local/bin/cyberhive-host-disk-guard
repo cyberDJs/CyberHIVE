@@ -2,13 +2,31 @@
 set -eu
 
 . /etc/cyberhive/live/config.env
+. /usr/local/lib/cyberhive-device.sh
 mkdir -p "$CYBERHIVE_EVIDENCE_DIR"
 
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT HUP INT TERM
 
-lsblk -dnpo NAME,TYPE,RM 2>/dev/null | awk '$2 == "disk" && $3 == "0" {print $1}' | while IFS= read -r disk; do
+allowed_parent=''
+current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
+live_dev=$(cyberhive_live_medium_device 2>/dev/null || true)
+if [ -n "$live_dev" ] && cyberhive_verify_live_slot "$current" "$live_dev"; then
+  candidate=$(cyberhive_parent_device "$live_dev" 2>/dev/null || true)
+  if [ -n "$candidate" ] && cyberhive_require_usb_parent "$candidate"; then
+    state_dev=$(cyberhive_partition_on_parent_by_label "$candidate" "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
+    efi_dev=$(cyberhive_partition_on_parent_by_label "$candidate" "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
+    if [ -n "$state_dev" ] && [ -n "$efi_dev" ]; then
+      allowed_parent="$candidate"
+    fi
+  fi
+fi
+
+lsblk -dnpo NAME,TYPE 2>/dev/null | awk '$2 == "disk" {print $1}' | while IFS= read -r disk; do
   [ -n "$disk" ] || continue
+  if [ -n "$allowed_parent" ] && [ "$disk" = "$allowed_parent" ]; then
+    continue
+  fi
   lsblk -nrpo NAME,MOUNTPOINT "$disk" 2>/dev/null | while IFS= read -r line; do
     dev=${line%% *}
     mountpoint=${line#* }
@@ -34,7 +52,8 @@ fi
 jq -n \
   --arg status "$status" \
   --arg violations "$violations" \
-  '{schema:"cyberhive.live.host_disk_guard.v1",status:$status,policy:"no writable mounts backed by non-removable physical disks",violations:$violations}' \
+  --arg allowed_parent "$allowed_parent" \
+  '{schema:"cyberhive.live.host_disk_guard.v3",status:$status,policy:"no writable mounts backed by physical disks other than the verified booted CyberHIVE USB parent",allowed_usb_parent:$allowed_parent,violations:$violations}' \
   >"$CYBERHIVE_EVIDENCE_DIR/host-disk-guard.json"
 
 cat "$CYBERHIVE_EVIDENCE_DIR/host-disk-guard.json"

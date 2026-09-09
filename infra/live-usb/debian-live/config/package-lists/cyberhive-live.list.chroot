@@ -1,4 +1,4 @@
-# CyberHIVE Live Appliance v0.2 package seed.
+# CyberHIVE Live Appliance v0.3 package seed.
 
 systemd
 systemd-sysv
@@ -22,3 +22,7 @@ dnsutils
 ca-certificates
 util-linux
 sudo
+grub-common
+tar
+gzip
+iptables

@@ -33,6 +33,23 @@ config/includes.chroot/etc/systemd/system/cyberhive-onboarding-init.service
 config/includes.chroot/etc/systemd/system/cyberhive-web.service
 config/includes.chroot/etc/systemd/system/cyberhive-host-disk-guard.service'
     ;;
+  0.3.*)
+    extra_required_paths='config/includes.chroot/usr/local/sbin/cyberhive-onboarding-init
+config/includes.chroot/usr/local/bin/cyberhive-welcome
+config/includes.chroot/usr/local/bin/cyberhive-web
+config/includes.chroot/usr/local/bin/cyberhive-host-disk-guard
+config/includes.chroot/usr/local/bin/cyberhive-support-bundle
+config/includes.chroot/etc/systemd/system/cyberhive-onboarding-init.service
+config/includes.chroot/etc/systemd/system/cyberhive-web.service
+config/includes.chroot/etc/systemd/system/cyberhive-host-disk-guard.service
+config/includes.chroot/usr/local/sbin/cyberhive-persist-init
+config/includes.chroot/usr/local/sbin/cyberhive-firstboot
+config/includes.chroot/usr/local/sbin/cyberhive-update
+config/includes.chroot/usr/local/sbin/cyberhive-boot-commit
+config/includes.chroot/etc/systemd/system/cyberhive-persist-init.service
+config/includes.chroot/etc/systemd/system/cyberhive-update-check.timer
+config/hooks/live/002-cyberhive-unattended-v03.hook.chroot'
+    ;;
   *) echo "unsupported live dry-run policy version: $live_version" >&2; exit 1 ;;
 esac
 
@@ -67,6 +84,12 @@ case "$live_version" in
   0.2.*)
     grep -R -n '^avahi-daemon$' "$live_dir/config/package-lists" >/dev/null
     grep -R -n 'CYBERHIVE_REMOTE_HELP_DEFAULT="disabled"' "$live_dir" >/dev/null
+    ;;
+  0.3.*)
+    grep -R -n '^avahi-daemon$' "$live_dir/config/package-lists" >/dev/null
+    grep -R -n 'CYBERHIVE_REMOTE_HELP_DEFAULT="disabled"' "$live_dir" >/dev/null
+    grep -R -n 'CYBERHIVE_PERSISTENCE_DEFAULT="usb-state"' "$live_dir/config/includes.chroot/etc/cyberhive/live/config.env" >/dev/null
+    grep -F 'CYBERHIVE_STATE_LABEL="CYBERHIVE_STATE"' "$live_dir/config/includes.chroot/etc/cyberhive/live/config.env" >/dev/null
     ;;
 esac
 

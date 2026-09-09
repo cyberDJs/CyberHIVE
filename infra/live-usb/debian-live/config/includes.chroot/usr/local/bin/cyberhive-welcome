@@ -1,65 +1,67 @@
 #!/bin/sh
 set -eu
-
 . /etc/cyberhive/live/config.env
 
-ip4=$(ip -4 -o addr show scope global 2>/dev/null | awk 'NR==1 {split($4,a,"/"); print a[1]}' || true)
-[ -n "$ip4" ] || ip4='pending-DHCP'
-preferred_url='http://cyberhive.local'
-if [ "$ip4" = 'pending-DHCP' ]; then
-  fallback_url='pending network'
-  ssh_target='pending network'
+lan_ip=$(ip -4 -o addr show scope global 2>/dev/null | awk '$2 != "tailscale0" {split($4,a,"/"); print a[1]; exit}' || true)
+ts_ip=$(tailscale ip -4 2>/dev/null | head -n 1 || true)
+[ -n "$lan_ip" ] || lan_ip='pending-network'
+if [ -n "$ts_ip" ]; then
+  web_url="http://$ts_ip"
+  ssh_target="ssh cyberhive@$ts_ip"
+  ts_status="$ts_ip"
 else
-  fallback_url="http://$ip4"
-  ssh_target="ssh cyberhive@$ip4"
+  web_url='pending Tailscale enrollment/network'
+  ssh_target='pending Tailscale enrollment/network'
+  ts_status='pending'
 fi
 
-auth_mode=$(cat "$CYBERHIVE_STATE_DIR/ssh-mode" 2>/dev/null || printf '%s' 'initializing')
-pairing_code=$(cat "$CYBERHIVE_CONTROL_DIR/pairing-code" 2>/dev/null || printf '%s' 'initializing')
+if [ "$lan_ip" = 'pending-network' ]; then
+  pair_url='pending local network'
+else
+  pair_url="http://$lan_ip (physical pairing only)"
+fi
+
+auth_mode=$(cat "$CYBERHIVE_STATE_DIR/ssh-mode" 2>/dev/null || printf '%s' initializing)
+pairing_code=$(cat "$CYBERHIVE_CONTROL_DIR/pairing-code" 2>/dev/null || printf '%s' initializing)
 ssh_password=$(cat "$CYBERHIVE_PRIVATE_DIR/ssh-password" 2>/dev/null || true)
-fingerprint=$(cat "$CYBERHIVE_STATE_DIR/ssh-host-fingerprint" 2>/dev/null || printf '%s' 'initializing')
-config_state=$(cat "$CYBERHIVE_STATE_DIR/config-media-state" 2>/dev/null || printf '%s' 'unknown')
-session_id=$(cat "$CYBERHIVE_STATE_DIR/session-id" 2>/dev/null || printf '%s' 'unknown')
-guard_status=$(jq -r '.status // "pending"' "$CYBERHIVE_EVIDENCE_DIR/host-disk-guard.json" 2>/dev/null || printf '%s' 'pending')
+fingerprint=$(cat "$CYBERHIVE_STATE_DIR/ssh-host-fingerprint" 2>/dev/null || printf '%s' initializing)
+config_state=$(cat "$CYBERHIVE_STATE_DIR/config-media-state" 2>/dev/null || printf '%s' unknown)
+persist_state=$(cat "$CYBERHIVE_STATE_DIR/persistence-state" 2>/dev/null || printf '%s' unknown)
+session_id=$(cat "$CYBERHIVE_STATE_DIR/session-id" 2>/dev/null || printf '%s' unknown)
+guard_status=$(jq -r '.status // "pending"' "$CYBERHIVE_EVIDENCE_DIR/host-disk-guard.json" 2>/dev/null || printf '%s' pending)
 
 tty_name=$(tty 2>/dev/null || true)
 local_console='false'
-case "$tty_name" in
-  /dev/tty[0-9]|/dev/tty[0-9][0-9]) local_console='true' ;;
-esac
+case "$tty_name" in /dev/tty[0-9]|/dev/tty[0-9][0-9]) local_console='true' ;; esac
 
-cat <<EOF
+cat <<EOT
 
 +--------------------------------------------------------------+
 |                     CYBERDJS / CyberHIVE                     |
-|                       LIVE APPLIANCE v0.2                    |
+|                 LIVE APPLIANCE v0.3 / A-B OTA               |
 +--------------------------------------------------------------+
-  Web          $preferred_url
-  IPv4         $fallback_url
+  Web          $web_url
+  Tailscale    $ts_status
   SSH          $ssh_target
+  LAN IPv4     $lan_ip (SSH blocked; HTTP pairing only)
+  Pair URL     $pair_url
   SSH auth     $auth_mode
   SSH host     $fingerprint
+  Persistence  $persist_state
   Config media $config_state
   Host guard   $guard_status
   DevBridge    $CYBERHIVE_DEVBRIDGE_DEFAULT
   MCP          $CYBERHIVE_MCP_DEFAULT
   Remote help  $CYBERHIVE_REMOTE_HELP_DEFAULT
   Session      $session_id
-EOF
-
+EOT
 if [ "$local_console" = 'true' ]; then
-  printf '  Pair code    %s\n' "$pairing_code"
+  printf '  Pair code    %s (local fallback; tailnet peers do not need it)\n' "$pairing_code"
   if [ "$auth_mode" = 'ephemeral-password' ] && [ -n "$ssh_password" ]; then
     printf '  SSH password %s\n' "$ssh_password"
   fi
-  printf '%s\n' '+--------------------------------------------------------------+'
-  if command -v qrencode >/dev/null 2>&1; then
-    printf '\nScan to open CyberHIVE on this LAN:\n'
-    qrencode -t ANSIUTF8 -m 1 "$preferred_url" 2>/dev/null || true
-  fi
 else
   printf '%s\n' '  Pair/password hidden on remote terminals.'
-  printf '%s\n' '+--------------------------------------------------------------+'
 fi
-
-printf '\nCommands: cyberhive-live-health | cyberhive-inventory | cyberhive-support-bundle\n\n'
+printf '%s\n' '+--------------------------------------------------------------+'
+printf '\nCommands: cyberhive-live-health | cyberhive-inventory | cyberhive-support-bundle | cyberhive-update\n\n'
