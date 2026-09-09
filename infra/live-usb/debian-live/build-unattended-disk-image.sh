@@ -81,20 +81,64 @@ insmod ext2
 insmod env
 insmod linux
 insmod regexp
+insmod probe
 
 # Bind every boot decision to the EFI device that firmware actually loaded.
 # v0.3 layout is fixed: GPT1=EFI, GPT2=A, GPT3=B, GPT4=STATE.
+# Some firmware/GRUB standalone combinations expose cmdpath as a path-only
+# value and try to fetch modules from /boot/grub/x86_64-efi on the EFI disk.
+# Keep the proof fail-closed, but allow a marker-backed root fallback and a
+# unique GPT1 marker scan before refusing to boot.
 set boot_disk=
+set boot_efi=
 if [ -n "$cmdpath" ]; then
   regexp --set=1:boot_disk '^\(([^,]+),gpt1\)(/.*)?$' "$cmdpath"
 fi
-if [ -z "$boot_disk" ]; then
+if [ -n "$boot_disk" ]; then
+  set boot_efi="$boot_disk,gpt1"
+fi
+
+if [ -z "$boot_efi" -a -n "$root" ]; then
+  set root_boot_disk=
+  regexp --set=1:root_boot_disk '^([^,]+),gpt1$' "$root"
+  if [ -n "$root_boot_disk" ]; then
+    if [ -f "($root)/cyberhive/grubenv" -a -f "($root)/EFI/BOOT/BOOTX64.EFI" ]; then
+      set boot_disk="$root_boot_disk"
+      set boot_efi="$root"
+    fi
+  fi
+fi
+
+if [ -z "$boot_efi" ]; then
+  set cyberhive_efi_candidate=
+  set cyberhive_efi_count=0
+  for candidate in (*); do
+    set candidate_disk=
+    regexp --set=1:candidate_disk '^\(([^,]+),gpt1\)$' "$candidate"
+    if [ -n "$candidate_disk" ]; then
+      if [ -f "$candidate/cyberhive/grubenv" -a -f "$candidate/EFI/BOOT/BOOTX64.EFI" ]; then
+        set cyberhive_efi_candidate="$candidate_disk"
+        if [ "$cyberhive_efi_count" = "0" ]; then
+          set cyberhive_efi_count=1
+        else
+          set cyberhive_efi_count=2
+        fi
+      fi
+    fi
+  done
+  if [ "$cyberhive_efi_count" = "1" ]; then
+    set boot_disk="$cyberhive_efi_candidate"
+    set boot_efi="$boot_disk,gpt1"
+  fi
+fi
+
+if [ -z "$boot_disk" -o -z "$boot_efi" ]; then
   echo "CyberHIVE: cannot prove boot EFI parent"
   sleep 30
   reboot
 fi
 
-set efi="$boot_disk,gpt1"
+set efi="$boot_efi"
 set envfile=($efi)/cyberhive/grubenv
 if [ -f "$envfile" ]; then load_env -f "$envfile"; fi
 if [ -z "$current_slot" ]; then set current_slot=A; fi
@@ -191,7 +235,13 @@ initrd "$slotroot/initrd.img"
 boot
 EOGRUB
 
-grub-mkstandalone -O x86_64-efi -o "$work/BOOTX64.EFI" "boot/grub/grub.cfg=$work/grub.cfg"
+grub_modules="part_gpt fat ext2 env linux regexp probe sleep reboot"
+grub-mkstandalone \
+  -O x86_64-efi \
+  --modules="$grub_modules" \
+  --install-modules="$grub_modules" \
+  -o "$work/BOOTX64.EFI" \
+  "boot/grub/grub.cfg=$work/grub.cfg"
 grub-editenv "$work/grubenv" create
 grub-editenv "$work/grubenv" set current_slot=A
 

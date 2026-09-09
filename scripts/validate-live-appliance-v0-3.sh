@@ -190,7 +190,13 @@ grep -F 'boot=live components noswap' "$auto_config" >/dev/null
 grep -F '. "$script_dir/config/includes.chroot/etc/cyberhive/live/config.env"' "$builder" >/dev/null
 grep -F 'mkfs.vfat -F 32 -n "$CYBERHIVE_EFI_LABEL"' "$builder" >/dev/null
 grep -F 'regexp --set=1:boot_disk' "$builder" >/dev/null
-grep -F 'set efi="$boot_disk,gpt1"' "$builder" >/dev/null
+grep -F 'set boot_efi=' "$builder" >/dev/null
+grep -F 'root_boot_disk' "$builder" >/dev/null
+grep -F 'cyberhive_efi_count' "$builder" >/dev/null
+grep -F 'set efi="$boot_efi"' "$builder" >/dev/null
+grep -F -- '--modules="$grub_modules"' "$builder" >/dev/null
+grep -F -- '--install-modules="$grub_modules"' "$builder" >/dev/null
+grep -F 'insmod probe' "$builder" >/dev/null
 grep -F 'set slotdev="$boot_disk,gpt2"' "$builder" >/dev/null
 grep -F 'set slotdev="$boot_disk,gpt3"' "$builder" >/dev/null
 grep -F 'cannot prove boot EFI parent' "$builder" >/dev/null
