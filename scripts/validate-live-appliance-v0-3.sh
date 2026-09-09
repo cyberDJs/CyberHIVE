@@ -375,6 +375,20 @@ assert root_ok['boot_efi'] == 'hd7,gpt1'
 missing_marker = run_parent_proof(cmdpath='/EFI/BOOT/BOOTX64.EFI', root='hd7,gpt1')
 assert missing_marker['status'] == 'fail-closed'
 
+missing_grubenv_marker = run_parent_proof(
+    cmdpath='/EFI/BOOT/BOOTX64.EFI',
+    root='hd7,gpt1',
+    files={'(hd7,gpt1)/EFI/BOOT/BOOTX64.EFI'},
+)
+assert missing_grubenv_marker['status'] == 'fail-closed'
+
+missing_bootefi_marker = run_parent_proof(
+    cmdpath='/EFI/BOOT/BOOTX64.EFI',
+    root='hd7,gpt1',
+    files={'(hd7,gpt1)/cyberhive/grubenv'},
+)
+assert missing_bootefi_marker['status'] == 'fail-closed'
+
 for visible_gpt1 in [[], ['hd9,gpt1'], ['hd9,gpt1', 'hd10,gpt1']]:
     marker_files = set()
     for dev in visible_gpt1:
