@@ -78,7 +78,7 @@ cat >"$work/grub.cfg" <<'EOGRUB'
 insmod part_gpt
 insmod fat
 insmod ext2
-insmod env
+insmod loadenv
 insmod linux
 insmod regexp
 insmod probe
@@ -87,8 +87,8 @@ insmod probe
 # v0.3 layout is fixed: GPT1=EFI, GPT2=A, GPT3=B, GPT4=STATE.
 # Some firmware/GRUB standalone combinations expose cmdpath as a path-only
 # value and try to fetch modules from /boot/grub/x86_64-efi on the EFI disk.
-# Keep the proof fail-closed, but allow a marker-backed root fallback and a
-# unique GPT1 marker scan before refusing to boot.
+# Keep the proof fail-closed: accept cmdpath first, then a marker-backed root
+# only if GRUB says root is GPT1. Never infer parentage from an unbound scan.
 set boot_disk=
 set boot_efi=
 if [ -n "$cmdpath" ]; then
@@ -108,30 +108,6 @@ if [ -z "$boot_efi" -a -n "$root" ]; then
     fi
   fi
 fi
-
-if [ -z "$boot_efi" ]; then
-  set cyberhive_efi_candidate=
-  set cyberhive_efi_count=0
-  for candidate in (*); do
-    set candidate_disk=
-    regexp --set=1:candidate_disk '^\(([^,]+),gpt1\)$' "$candidate"
-    if [ -n "$candidate_disk" ]; then
-      if [ -f "$candidate/cyberhive/grubenv" -a -f "$candidate/EFI/BOOT/BOOTX64.EFI" ]; then
-        set cyberhive_efi_candidate="$candidate_disk"
-        if [ "$cyberhive_efi_count" = "0" ]; then
-          set cyberhive_efi_count=1
-        else
-          set cyberhive_efi_count=2
-        fi
-      fi
-    fi
-  done
-  if [ "$cyberhive_efi_count" = "1" ]; then
-    set boot_disk="$cyberhive_efi_candidate"
-    set boot_efi="$boot_disk,gpt1"
-  fi
-fi
-
 if [ -z "$boot_disk" -o -z "$boot_efi" ]; then
   echo "CyberHIVE: cannot prove boot EFI parent"
   sleep 30
@@ -235,7 +211,7 @@ initrd "$slotroot/initrd.img"
 boot
 EOGRUB
 
-grub_modules="part_gpt fat ext2 env linux regexp probe sleep reboot"
+grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot"
 grub-mkstandalone \
   -O x86_64-efi \
   --modules="$grub_modules" \

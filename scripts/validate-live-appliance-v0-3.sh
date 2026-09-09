@@ -192,10 +192,14 @@ grep -F 'mkfs.vfat -F 32 -n "$CYBERHIVE_EFI_LABEL"' "$builder" >/dev/null
 grep -F 'regexp --set=1:boot_disk' "$builder" >/dev/null
 grep -F 'set boot_efi=' "$builder" >/dev/null
 grep -F 'root_boot_disk' "$builder" >/dev/null
-grep -F 'cyberhive_efi_count' "$builder" >/dev/null
+if grep -F 'cyberhive_efi_count' "$builder"; then echo 'GRUB must not infer EFI parent from an unbound marker scan' >&2; exit 1; fi
+if grep -F 'cyberhive_efi_candidate' "$builder"; then echo 'GRUB must not keep an unbound EFI marker candidate fallback' >&2; exit 1; fi
 grep -F 'set efi="$boot_efi"' "$builder" >/dev/null
 grep -F -- '--modules="$grub_modules"' "$builder" >/dev/null
 grep -F -- '--install-modules="$grub_modules"' "$builder" >/dev/null
+grep -F 'insmod loadenv' "$builder" >/dev/null
+if grep -F 'insmod env' "$builder"; then echo 'GRUB load_env/save_env require loadenv.mod, not env.mod' >&2; exit 1; fi
+grep -F 'grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot"' "$builder" >/dev/null
 grep -F 'insmod probe' "$builder" >/dev/null
 grep -F 'set slotdev="$boot_disk,gpt2"' "$builder" >/dev/null
 grep -F 'set slotdev="$boot_disk,gpt3"' "$builder" >/dev/null
@@ -208,6 +212,62 @@ grep -F 'probe --fs-uuid --set=slot_uuid "$selected_slot"' "$builder" >/dev/null
 grep -F 'cannot prove selected slot filesystem UUID' "$builder" >/dev/null
 grep -F 'live-media=/dev/disk/by-uuid/$slot_uuid' "$builder" >/dev/null
 grep -F 'boot=live components noswap' "$builder" >/dev/null
+python3 - "$builder" <<'PY'
+from pathlib import Path
+import re
+import sys
+builder = Path(sys.argv[1]).read_text()
+match = re.search(r"cat >\"\$work/grub\.cfg\" <<'EOGRUB'\n(?P<cfg>.*?)\nEOGRUB\n", builder, re.S)
+if not match:
+    raise AssertionError('embedded GRUB config here-doc not found')
+cfg = match.group('cfg')
+required = [
+    'insmod loadenv',
+    'regexp --set=1:boot_disk',
+    'regexp --set=1:root_boot_disk',
+    'set boot_efi="$root"',
+    'set slotdev="$boot_disk,gpt2"',
+    'set slotdev="$boot_disk,gpt3"',
+    'CyberHIVE: cannot prove boot EFI parent',
+]
+for needle in required:
+    if needle not in cfg:
+        raise AssertionError(f'missing GRUB parent proof fragment: {needle}')
+for forbidden in ['insmod env', 'cyberhive_efi_candidate', 'cyberhive_efi_count']:
+    if forbidden in cfg:
+        raise AssertionError(f'unsafe GRUB parent fallback remains: {forbidden}')
+
+def prove(cmdpath='', root='', files=(), visible_gpt1=()):
+    boot_disk = ''
+    boot_efi = ''
+    if cmdpath:
+        m = re.match(r'^\(([^,]+),gpt1\)(/.*)?$', cmdpath)
+        if m:
+            boot_disk = m.group(1)
+    if boot_disk:
+        boot_efi = f'{boot_disk},gpt1'
+    if not boot_efi and root:
+        m = re.match(r'^([^,]+),gpt1$', root)
+        if m:
+            root_boot_disk = m.group(1)
+            if f'({root})/cyberhive/grubenv' in files and f'({root})/EFI/BOOT/BOOTX64.EFI' in files:
+                boot_disk = root_boot_disk
+                boot_efi = root
+    # visible_gpt1 is deliberately ignored: uniqueness is not parent proof.
+    if not boot_disk or not boot_efi:
+        return None
+    return boot_disk, boot_efi
+
+assert prove(cmdpath='(hd2,gpt1)/EFI/BOOT/BOOTX64.EFI') == ('hd2', 'hd2,gpt1')
+assert prove(cmdpath='/EFI/BOOT/BOOTX64.EFI', root='hd7,gpt1', files={
+    '(hd7,gpt1)/cyberhive/grubenv',
+    '(hd7,gpt1)/EFI/BOOT/BOOTX64.EFI',
+}) == ('hd7', 'hd7,gpt1')
+assert prove(cmdpath='/EFI/BOOT/BOOTX64.EFI', root='hd7,gpt1', files=set()) is None
+for visible in [[], ['hd9,gpt1'], ['hd9,gpt1', 'hd10,gpt1']]:
+    assert prove(cmdpath='', root='', files=set(), visible_gpt1=visible) is None
+print('GRUB EFI parent fallback behavioral model passed')
+PY
 grep -F 'cyberhive.slot_uuid=$slot_uuid' "$builder" >/dev/null
 grep -F 'slot_uuid_duplicate' "$builder" >/dev/null
 grep -F 'for candidate in (*); do' "$builder" >/dev/null
