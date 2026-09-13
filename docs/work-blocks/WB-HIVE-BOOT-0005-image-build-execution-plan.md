@@ -71,11 +71,18 @@ operation_class: REPO_WRITE
 scope: documentation and validation workflow only
 ```
 
-Future image execution:
+Future workflow dispatch:
+
+```text
+operation_class: REMOTE_WRITE + COMPUTE
+scope: manual GitHub workflow dispatch on main
+```
+
+Future build execution:
 
 ```text
 operation_class: COMPUTE
-scope: isolated builder or GitHub-hosted workflow
+scope: isolated GitHub-hosted runner or disposable local builder
 ```
 
 Future USB write or boot smoke:
@@ -112,6 +119,8 @@ Valid image-only approval events:
 1. GitHub manual workflow dispatch with an explicit build input enabled.
 2. Local operator command with `CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL=BUILD_IMAGE_ONLY_NO_USB`.
 3. For an unmerged same-repository PR only, the `approved:image-build-only` label event defined by `WB-HIVE-BOOT-0004`.
+
+Manual GitHub workflow dispatch is classified as `REMOTE_WRITE + COMPUTE`: it mutates GitHub Actions state by starting a remote workflow run, and the workflow then performs an isolated compute build when explicitly enabled.
 
 The approval must bind:
 
