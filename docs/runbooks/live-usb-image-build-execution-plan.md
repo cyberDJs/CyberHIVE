@@ -47,6 +47,18 @@ Use this path for a current-main image artifact candidate.
 6. Confirm the uploaded evidence artifact name binds the source commit and workflow run.
 7. Download or inspect the artifact evidence before any promotion decision.
 
+Required workflow dispatch:
+
+```text
+workflow: Live USB real image build manual
+ref: main
+approval_token: BUILD_IMAGE_ONLY_NO_USB
+run_build: true
+builder_label: github-main-<sha>-run-<run_id> or another safe label
+```
+
+The dispatch must target the current `main` commit observed immediately before execution. A stale baseline commit is not a valid standing target.
+
 The manual workflow dispatch is explicit image-only approval.
 
 ```text
