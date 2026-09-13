@@ -1,0 +1,48 @@
+name: Live USB image build execution plan
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - 'docs/work-blocks/WB-HIVE-BOOT-0005-image-build-execution-plan.md'
+      - 'docs/runbooks/live-usb-image-build-execution-plan.md'
+      - 'docs/security/live-usb-image-build-execution-safety.md'
+      - 'docs/notes/WB-HIVE-BOOT-0005-source-map.md'
+      - 'infra/live-usb/build-plan.md'
+      - 'infra/live-usb/debian-live/IMAGE-BUILD-EXECUTION-PLAN.md'
+      - 'scripts/validate-live-usb-image-build-execution-plan.sh'
+      - '.github/workflows/live-usb-image-build-execution-plan.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/work-blocks/WB-HIVE-BOOT-0005-image-build-execution-plan.md'
+      - 'docs/runbooks/live-usb-image-build-execution-plan.md'
+      - 'docs/security/live-usb-image-build-execution-safety.md'
+      - 'docs/notes/WB-HIVE-BOOT-0005-source-map.md'
+      - 'infra/live-usb/build-plan.md'
+      - 'infra/live-usb/debian-live/IMAGE-BUILD-EXECUTION-PLAN.md'
+      - 'scripts/validate-live-usb-image-build-execution-plan.sh'
+      - '.github/workflows/live-usb-image-build-execution-plan.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cyberhive-image-build-execution-plan-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image-build-execution-plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate image build execution plan scope
+        shell: sh
+        run: sh scripts/validate-live-usb-image-build-execution-plan.sh

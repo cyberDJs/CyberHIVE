@@ -108,13 +108,52 @@ runtime verification: NOT CLAIMED
 ADR accepted: NO
 ```
 
-### Stage 4 — CI image build candidate
+### Stage 4 — image build execution plan
 
-CI validates that the tracked configuration can assemble an image or at least a deterministic root filesystem manifest.
+The image build execution plan defines how to produce and inspect current-main image artifact evidence after the Stage 3 gate has merged.
 
-This remains future work and must remain separate from the Stage 1 dry-run wrapper, Stage 2 plan and Stage 3 image build gate.
+It does not run an image build. It binds the future execution to:
 
-### Stage 5 — USB boot smoke
+- exact source commit re-read,
+- explicit image-only approval,
+- artifact evidence capture,
+- manifest and hash inspection,
+- no USB/media write,
+- no boot claim,
+- no runtime claim,
+- no deployment claim,
+- no ADR acceptance.
+
+Status: implemented as plan by `WB-HIVE-BOOT-0005`.
+
+Boundary markers:
+
+```text
+IMAGE BUILD EXECUTION PLAN ONLY
+current-main image artifact: NOT CREATED BY THIS PLAN
+USB write: NOT AUTHORIZED
+hardware boot: NOT CLAIMED
+runtime verification: NOT CLAIMED
+deployment: NOT PERFORMED
+ADR accepted: NO
+```
+
+### Stage 5 — current-main image build execution
+
+An operator can execute an image-only build from the current `main` source commit using the Stage 3 wrapper or manual workflow.
+
+This remains future work. It must produce artifact evidence and must not claim USB boot, runtime verification or deployment.
+
+Minimum required result:
+
+```text
+image artifact candidate exists
+manifest inspected
+source_commit exact
+negative claims preserved
+```
+
+### Stage 6 — USB boot smoke
 
 Manual evidence proves that the image boots on at least one compatible machine and does not write to internal disks by default.
 
@@ -131,7 +170,7 @@ cyberhive-live-usb-v<version>-<arch>-<date>.sha256
 cyberhive-live-usb-v<version>-<arch>-<date>.build-log.txt
 ```
 
-Stage 1 dry-run does not create these artifacts. Stage 2 planning does not create these artifacts. Stage 3 may create these artifacts only after explicit image-only authorization.
+Stage 1 dry-run does not create these artifacts. Stage 2 planning does not create these artifacts. Stage 3 may create these artifacts only after explicit image-only authorization. Stage 4 does not create these artifacts.
 
 ## Dry-run manifest
 
@@ -198,16 +237,16 @@ Minimum evidence for a future boot smoke test:
 Minimum evidence for Stage 1 dry-run:
 
 - source branch/commit
-- dry-run command
-- generated dry-run manifest
-- CI job result
-- confirmation that no image/media/runtime verification claim was made
+- dry-run manifest
+- tracked input paths
+- no image output
+- no USB write claim
 
-## Non-goals for v0.1
+Minimum evidence for Stage 4 execution planning:
 
-- Secure Boot signing
-- GPU inference
-- mobile worker runtime
-- public federation
-- autonomous updates
-- destructive rescue operations
+- source baseline
+- exact source re-read requirement
+- execution authority boundary
+- artifact inspection checklist
+- promotion hold
+- no current-main image artifact claim
