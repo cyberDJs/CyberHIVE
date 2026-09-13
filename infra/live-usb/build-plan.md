@@ -79,17 +79,40 @@ runtime verification: NOT CLAIMED
 ADR accepted: NO
 ```
 
-### Stage 3 — authorized local image build
+### Stage 3 — real image build gate
 
-A developer can build an ISO/image locally from tracked configuration only after a separate authorization bound to source commit, build candidate path and output directory.
+A developer or isolated runner can attempt an image build from tracked configuration only after the exact build-only approval token is supplied.
 
-This remains future work. It requires explicit build evidence and a hashable output artifact.
+Command:
+
+```sh
+CYBERHIVE_REAL_IMAGE_BUILD_APPROVAL=BUILD_IMAGE_ONLY_NO_USB \
+sh infra/live-usb/debian-live/build-real-image.sh
+```
+
+Expected output directory:
+
+```text
+.cyberhive-live-real-build/
+```
+
+Status: gate implemented by `WB-HIVE-BOOT-0004`; real image build execution remains operator-authorized only and is not run by PR validation.
+
+Boundary markers:
+
+```text
+ISO build: NOT RUN BY PR
+USB write: NOT AUTHORIZED
+hardware boot: NOT CLAIMED
+runtime verification: NOT CLAIMED
+ADR accepted: NO
+```
 
 ### Stage 4 — CI image build candidate
 
 CI validates that the tracked configuration can assemble an image or at least a deterministic root filesystem manifest.
 
-This remains future work and must remain separate from the Stage 1 dry-run wrapper and Stage 2 plan.
+This remains future work and must remain separate from the Stage 1 dry-run wrapper, Stage 2 plan and Stage 3 image build gate.
 
 ### Stage 5 — USB boot smoke
 
@@ -108,7 +131,7 @@ cyberhive-live-usb-v<version>-<arch>-<date>.sha256
 cyberhive-live-usb-v<version>-<arch>-<date>.build-log.txt
 ```
 
-Stage 1 dry-run does not create these artifacts. Stage 2 planning does not create these artifacts.
+Stage 1 dry-run does not create these artifacts. Stage 2 planning does not create these artifacts. Stage 3 may create these artifacts only after explicit image-only authorization.
 
 ## Dry-run manifest
 
@@ -156,7 +179,7 @@ Minimum evidence bundle for a future real image build:
 - build command and environment
 - source commit
 - image hash
-- manifest hash
+- manifest hash sidecar
 - build log hash
 - package/rootfs manifest when available
 - known limitations
