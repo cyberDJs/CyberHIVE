@@ -640,7 +640,10 @@ def stable_hash(value: Any) -> str:
 def _stable(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {str(k): _stable(v) for k, v in sorted(value.items(), key=lambda item: str(item[0]))}
-    if isinstance(value, (list, tuple, set, frozenset)):
+    if isinstance(value, (set, frozenset)):
+        stable_items = [_stable(v) for v in value]
+        return sorted(stable_items, key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":"), default=str))
+    if isinstance(value, (list, tuple)):
         return [_stable(v) for v in value]
     if isinstance(value, Enum):
         return value.value

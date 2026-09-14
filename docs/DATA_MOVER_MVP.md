@@ -63,3 +63,10 @@ Later patches should connect `DataMove` objects from `DataFabric` to `DataMoveRe
 - **Copy-then-switch**: copy to temp path, verify, then atomically replace target.
 - **Backup path**: previous target saved before overwrite.
 - **Rollback**: restore previous target from backup or remove newly switched target.
+
+## Block L closeout note
+
+The overwrite failure recovery regression remains part of the hardening gate. If
+an overwrite backs up an existing target and a later switch/checksum step fails,
+the mover restores the original target before returning failure evidence in the
+plan audit.
