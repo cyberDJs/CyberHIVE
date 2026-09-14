@@ -6,7 +6,7 @@
 - [x] Drive project structure
 - [x] project context and agent rules
 - [x] first three reusable skills prepared
-- [ ] ADR-0001 approve architecture baseline
+- [x] ADR-0001 approve architecture baseline
 - [ ] choose base Linux and inference runtime experiment matrix
 
 ## M1 — Single-node appliance
