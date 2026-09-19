@@ -189,7 +189,8 @@ auto_config='infra/live-usb/debian-live/auto/config'
 grep -F 'boot=live components noswap' "$auto_config" >/dev/null
 grep -F '. "$script_dir/config/includes.chroot/etc/cyberhive/live/config.env"' "$builder" >/dev/null
 grep -F 'mkfs.vfat -F 32 -n "$CYBERHIVE_EFI_LABEL"' "$builder" >/dev/null
-grep -F 'regexp --set=1:boot_disk' "$builder" >/dev/null
+grep -F "regexp --set boot_efi '^\\(([^)]+)\\)' \"\$cmdpath\"" "$builder" >/dev/null
+grep -F "regexp --set boot_disk '^([^,]+),gpt1$' \"\$boot_efi\"" "$builder" >/dev/null
 grep -F 'set boot_efi=' "$builder" >/dev/null
 grep -F 'root_boot_disk' "$builder" >/dev/null
 if grep -F 'cyberhive_efi_count' "$builder"; then echo 'GRUB must not infer EFI parent from an unbound marker scan' >&2; exit 1; fi
@@ -225,8 +226,9 @@ if not match:
 cfg = match.group('cfg')
 required = [
     'insmod loadenv',
-    'regexp --set=1:boot_disk',
-    'regexp --set=1:root_boot_disk',
+    'regexp --set boot_efi',
+    'regexp --set boot_disk',
+    'regexp --set root_boot_disk',
     'set boot_efi="$root"',
     'set slotdev="$boot_disk,gpt2"',
     'set slotdev="$boot_disk,gpt3"',
@@ -313,11 +315,11 @@ def run_parent_proof(*, cmdpath='', root='', files=()):
     def run_line(line):
         if line.startswith('regexp '):
             parts = shlex.split(line)
-            if len(parts) != 4 or not parts[1].startswith('--set=1:'):
+            if len(parts) != 5 or parts[1] != '--set':
                 raise UnsupportedGrub(f'unsupported regexp statement: {line}')
-            target = parts[1].split(':', 1)[1]
-            pattern = parts[2]
-            subject = expand(parts[3])
+            target = parts[2]
+            pattern = parts[3]
+            subject = expand(parts[4])
             found = re.match(pattern, subject)
             env[target] = found.group(1) if found else ''
             return
@@ -359,6 +361,11 @@ cmdpath_ok = run_parent_proof(cmdpath='(hd2,gpt1)/EFI/BOOT/BOOTX64.EFI')
 assert cmdpath_ok['status'] == 'ok'
 assert cmdpath_ok['boot_disk'] == 'hd2'
 assert cmdpath_ok['boot_efi'] == 'hd2,gpt1'
+
+acer_cmdpath = run_parent_proof(cmdpath='(hd0,gpt1)/EFI/BOOT')
+assert acer_cmdpath['status'] == 'ok'
+assert acer_cmdpath['boot_disk'] == 'hd0'
+assert acer_cmdpath['boot_efi'] == 'hd0,gpt1'
 
 root_ok = run_parent_proof(
     cmdpath='/EFI/BOOT/BOOTX64.EFI',
@@ -414,7 +421,7 @@ grep -F 'ignore_loglevel' "$builder" >/dev/null
 grep -F 'systemd.log_level=debug' "$builder" >/dev/null
 grep -F 'systemd.journald.forward_to_console=1' "$builder" >/dev/null
 grep -F 'rd.debug' "$builder" >/dev/null
-grep -F 'nomodeset' "$builder" >/dev/null
+if grep -F 'nomodeset' "$builder"; then echo 'default diagnostic kernel command line must preserve native graphics/KMS' >&2; exit 1; fi
 grep -F 'console=tty0' "$builder" >/dev/null
 grep -F 'rd.shell' "$builder" >/dev/null
 grep -F 'rd.emergency=shell' "$builder" >/dev/null
