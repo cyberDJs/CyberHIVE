@@ -197,9 +197,9 @@ if grep -F 'cyberhive_efi_candidate' "$builder"; then echo 'GRUB must not keep a
 grep -F 'set efi="$boot_efi"' "$builder" >/dev/null
 grep -F -- '--modules="$grub_modules"' "$builder" >/dev/null
 grep -F -- '--install-modules="$grub_modules"' "$builder" >/dev/null
+grep -F 'grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot echo"' "$builder" >/dev/null
 grep -F 'insmod loadenv' "$builder" >/dev/null
 if grep -F 'insmod env' "$builder"; then echo 'GRUB load_env/save_env require loadenv.mod, not env.mod' >&2; exit 1; fi
-grep -F 'grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot"' "$builder" >/dev/null
 grep -F 'insmod probe' "$builder" >/dev/null
 grep -F 'set slotdev="$boot_disk,gpt2"' "$builder" >/dev/null
 grep -F 'set slotdev="$boot_disk,gpt3"' "$builder" >/dev/null
@@ -406,6 +406,20 @@ grep -F 'duplicate selected slot filesystem UUID' "$builder" >/dev/null
 grep -F 'selected slot filesystem UUID resolved ambiguously' "$builder" >/dev/null
 assert_before "$builder" 'duplicate selected slot filesystem UUID' 'linux "$slotroot/vmlinuz"'
 assert_before "$builder" 'selected slot filesystem UUID resolved ambiguously' 'linux "$slotroot/vmlinuz"'
+grep -F '*** CYBERHIVE DIAGNOSTIC BUILD ***' "$builder" >/dev/null
+grep -F 'panic=-1' "$builder" >/dev/null
+grep -F 'panic_print=0x1f' "$builder" >/dev/null
+grep -F 'loglevel=7' "$builder" >/dev/null
+grep -F 'ignore_loglevel' "$builder" >/dev/null
+grep -F 'systemd.log_level=debug' "$builder" >/dev/null
+grep -F 'systemd.journald.forward_to_console=1' "$builder" >/dev/null
+grep -F 'rd.debug' "$builder" >/dev/null
+grep -F 'nomodeset' "$builder" >/dev/null
+grep -F 'console=tty0' "$builder" >/dev/null
+grep -F 'rd.shell' "$builder" >/dev/null
+grep -F 'rd.emergency=shell' "$builder" >/dev/null
+if grep -F 'quiet splash' "$builder"; then echo 'diagnostic kernel command line must not include quiet splash' >&2; exit 1; fi
+if grep -F 'panic=30' "$builder"; then echo 'diagnostic kernel command line must disable auto reboot, not panic=30' >&2; exit 1; fi
 if grep -F 'hd15,gpt3' "$builder"; then echo 'GRUB duplicate UUID check must not be limited to a hard-coded disk list' >&2; exit 1; fi
 if grep -F 'search --no-floppy --label' "$builder"; then echo 'GRUB slot selection must not use globally non-unique labels' >&2; exit 1; fi
 grep -F '"usb_written": false' "$builder" >/dev/null

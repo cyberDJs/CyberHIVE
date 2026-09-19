@@ -206,12 +206,15 @@ if [ "$slot_uuid_match" != "$selected_slot" ]; then
   reboot
 fi
 
-linux "$slotroot/vmlinuz" boot=live components noswap username=cyberhive hostname=cyberhive-live live-media=/dev/disk/by-uuid/$slot_uuid live-media-path=$live_path cyberhive.slot=$boot_slot cyberhive.slot_uuid=$slot_uuid quiet splash panic=30
+echo "*** CYBERHIVE DIAGNOSTIC BUILD ***"
+echo "Kernel panic auto-reboot disabled; verbose console diagnostics enabled"
+set diagnostic_args="panic=-1 panic_print=0x1f loglevel=7 ignore_loglevel systemd.log_level=debug systemd.journald.forward_to_console=1 rd.debug nomodeset console=tty0 rd.shell rd.emergency=shell"
+linux "$slotroot/vmlinuz" boot=live components noswap username=cyberhive hostname=cyberhive-live live-media=/dev/disk/by-uuid/$slot_uuid live-media-path=$live_path cyberhive.slot=$boot_slot cyberhive.slot_uuid=$slot_uuid $diagnostic_args
 initrd "$slotroot/initrd.img"
 boot
 EOGRUB
 
-grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot"
+grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot echo"
 grub-mkstandalone \
   -O x86_64-efi \
   --modules="$grub_modules" \
