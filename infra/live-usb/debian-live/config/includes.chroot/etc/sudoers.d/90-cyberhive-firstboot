@@ -1,0 +1,1 @@
+cyberhive ALL=(root) NOPASSWD: /usr/local/sbin/cyberhive-firstboot

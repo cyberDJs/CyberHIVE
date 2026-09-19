@@ -1,0 +1,39 @@
+name: Live Appliance v0.3 unattended OTA
+
+on:
+  pull_request:
+    paths:
+      - 'infra/live-usb/**'
+      - 'scripts/validate-live-appliance-v0-3.sh'
+      - 'scripts/test-cyberhive-boot-commit-empty-current-slot.py'
+      - 'scripts/test-cyberhive-web-pairing-limit.py'
+      - 'docs/work-blocks/WB-HIVE-BOOT-0006-unattended-ota-v0-3.md'
+      - 'docs/adr/ADR-0026-cyberhive-unattended-single-usb-ab-ota.md'
+      - 'docs/runbooks/live-appliance-v0-3.md'
+      - 'docs/security/live-appliance-v0-3-safety.md'
+      - '.github/workflows/live-appliance-v0-3.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/live-usb/**'
+      - 'scripts/validate-live-appliance-v0-3.sh'
+      - 'scripts/test-cyberhive-boot-commit-empty-current-slot.py'
+      - 'scripts/test-cyberhive-web-pairing-limit.py'
+      - '.github/workflows/live-appliance-v0-3.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-v0-3:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate unattended persistence and A/B OTA contract
+        shell: sh
+        run: |
+          sh scripts/validate-live-appliance-v0-3.sh
+          python3 scripts/test-cyberhive-boot-commit-empty-current-slot.py
+          python3 scripts/test-cyberhive-web-pairing-limit.py

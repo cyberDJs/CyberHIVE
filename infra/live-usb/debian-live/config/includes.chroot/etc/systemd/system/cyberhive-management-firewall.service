@@ -1,0 +1,13 @@
+[Unit]
+Description=CyberHIVE management surface firewall
+After=cyberhive-persist-init.service
+Before=ssh.service cyberhive-web.service
+Wants=cyberhive-persist-init.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cyberhive-management-firewall
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

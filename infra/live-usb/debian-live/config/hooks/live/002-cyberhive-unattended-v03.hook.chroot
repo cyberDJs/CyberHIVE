@@ -1,0 +1,32 @@
+#!/bin/sh
+set -eu
+
+# Install Tailscale from its signed Debian repository during image construction.
+install -d -m 0755 /usr/share/keyrings /etc/apt/sources.list.d
+curl -fsSL --proto '=https' --tlsv1.2 \
+  https://pkgs.tailscale.com/stable/debian/bookworm.noarmor.gpg \
+  -o /usr/share/keyrings/tailscale-archive-keyring.gpg
+curl -fsSL --proto '=https' --tlsv1.2 \
+  https://pkgs.tailscale.com/stable/debian/bookworm.tailscale-keyring.list \
+  -o /etc/apt/sources.list.d/tailscale.list
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tailscale
+rm -rf /var/lib/apt/lists/*
+
+cat >/etc/motd <<'MOTD'
+CYBERDJS / CyberHIVE Live Appliance v0.3
+
+First physical boot provisions persistent Wi-Fi and Tailscale state on the USB.
+Normal boots are unattended. SSH and Web management are restricted to tailscale0.
+Run: cyberhive-welcome
+Run: cyberhive-live-health
+Run: cyberhive-inventory
+Run: cyberhive-update --manifest URL [--reboot]
+MOTD
+
+chmod 0440 /etc/sudoers.d/90-cyberhive-firstboot
+systemctl enable cyberhive-persist-init.service
+systemctl enable cyberhive-management-firewall.service
+systemctl enable tailscaled.service
+systemctl enable cyberhive-boot-commit.service
+systemctl enable cyberhive-update-check.timer
