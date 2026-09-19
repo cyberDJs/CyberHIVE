@@ -528,7 +528,7 @@ def pairing_attempt(peer):
     handler.send_json = lambda status, payload, extra_headers=None: responses.append(
         (int(status), payload)
     )
-    with unittest.mock.patch.object(module.PAIR_FILE, 'read_text', return_value='654321'):
+    with unittest.mock.patch('pathlib.Path.read_text', return_value='654321'):
         handler.do_POST()
     assert len(responses) == 1
     return responses[0]
