@@ -492,6 +492,57 @@ assert module.trusted_management_request(Headers(Host='cyberhive.local', Origin=
 assert not module.trusted_management_request(Headers(Host='attacker.example'))
 assert not module.trusted_management_request(Headers(Host='100.64.0.10', Origin='http://attacker.example'))
 PY
+python3 - "$web" <<'PY'
+from io import BytesIO
+import importlib.machinery
+import importlib.util
+import json
+import os
+import sys
+import unittest.mock
+
+os.environ['CYBERHIVE_TAILSCALE_HOSTNAME'] = 'cyberhive-dev-01'
+loader = importlib.machinery.SourceFileLoader('cyberhive_web_pairing_test', sys.argv[1])
+spec = importlib.util.spec_from_loader(loader.name, loader)
+module = importlib.util.module_from_spec(spec)
+with unittest.mock.patch('pathlib.Path.mkdir'), \
+     unittest.mock.patch('pathlib.Path.write_text'), \
+     unittest.mock.patch('os.chmod'):
+    loader.exec_module(module)
+
+module.ATTEMPTS.clear()
+module.GLOBAL_ATTEMPTS.clear()
+
+def pairing_attempt(peer):
+    body = json.dumps({'code': '000000'}).encode()
+    handler = object.__new__(module.Handler)
+    handler.path = '/api/pair'
+    handler.client_address = (peer, 12345)
+    handler.headers = {
+        'Host': '192.168.50.2',
+        'Content-Type': 'application/json',
+        'Content-Length': str(len(body)),
+    }
+    handler.rfile = BytesIO(body)
+    responses = []
+    handler.send_json = lambda status, payload, extra_headers=None: responses.append(
+        (int(status), payload)
+    )
+    with unittest.mock.patch.object(module.PAIR_FILE, 'read_text', return_value='654321'):
+        handler.do_POST()
+    assert len(responses) == 1
+    return responses[0]
+
+for index in range(module.PAIRING_GLOBAL_ATTEMPT_LIMIT):
+    status, payload = pairing_attempt(f'192.168.50.{index + 10}')
+    assert status == 401, (index, status, payload)
+
+status, payload = pairing_attempt('192.168.51.250')
+assert status == 429, (status, payload)
+assert payload.get('error') == 'pairing rate limit exceeded'
+assert len(module.GLOBAL_ATTEMPTS) == module.PAIRING_GLOBAL_ATTEMPT_LIMIT
+print('global pairing rate-limit behavioral test passed')
+PY
 
 web_unit="$root/etc/systemd/system/cyberhive-web.service"
 ssh_dropin="$root/etc/systemd/system/ssh.service.d/20-cyberhive-management-firewall.conf"
