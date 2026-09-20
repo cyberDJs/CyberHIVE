@@ -198,7 +198,8 @@ if grep -F 'cyberhive_efi_candidate' "$builder"; then echo 'GRUB must not keep a
 grep -F 'set efi="$boot_efi"' "$builder" >/dev/null
 grep -F -- '--modules="$grub_modules"' "$builder" >/dev/null
 grep -F -- '--install-modules="$grub_modules"' "$builder" >/dev/null
-grep -F 'grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot echo"' "$builder" >/dev/null
+grep -F 'grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot echo test"' "$builder" >/dev/null
+grep -F 'insmod test' "$builder" >/dev/null
 grep -F 'insmod loadenv' "$builder" >/dev/null
 if grep -F 'insmod env' "$builder"; then echo 'GRUB load_env/save_env require loadenv.mod, not env.mod' >&2; exit 1; fi
 grep -F 'insmod probe' "$builder" >/dev/null
@@ -226,6 +227,7 @@ if not match:
 cfg = match.group('cfg')
 required = [
     'insmod loadenv',
+    'insmod test',
     'regexp --set boot_efi',
     'regexp --set boot_disk',
     'regexp --set root_boot_disk',
@@ -237,6 +239,8 @@ required = [
 for needle in required:
     if needle not in cfg:
         raise AssertionError(f'missing GRUB parent proof fragment: {needle}')
+if cfg.index('insmod test') > cfg.index('if [ -n "$cmdpath" ]; then'):
+    raise AssertionError('test.mod must be loaded before the first bracket condition on Acer standalone GRUB')
 for forbidden in ['insmod env', 'cyberhive_efi_candidate', 'cyberhive_efi_count']:
     if forbidden in cfg:
         raise AssertionError(f'unsafe GRUB parent fallback remains: {forbidden}')

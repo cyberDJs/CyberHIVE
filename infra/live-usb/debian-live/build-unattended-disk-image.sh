@@ -82,6 +82,7 @@ insmod loadenv
 insmod linux
 insmod regexp
 insmod probe
+insmod test
 
 # Bind every boot decision to the EFI device that firmware actually loaded.
 # v0.3 layout is fixed: GPT1=EFI, GPT2=A, GPT3=B, GPT4=STATE.
@@ -220,7 +221,8 @@ initrd "$slotroot/initrd.img"
 boot
 EOGRUB
 
-grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot echo"
+# Keep every command used by the embedded grub.cfg inside the standalone EFI; Acer does not provide external GRUB modules.
+grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot echo test"
 grub-mkstandalone \
   -O x86_64-efi \
   --modules="$grub_modules" \
