@@ -82,6 +82,7 @@ insmod loadenv
 insmod linux
 insmod regexp
 insmod probe
+insmod test
 
 # Bind every boot decision to the EFI device that firmware actually loaded.
 # v0.3 layout is fixed: GPT1=EFI, GPT2=A, GPT3=B, GPT4=STATE.
@@ -92,7 +93,13 @@ insmod probe
 set boot_disk=
 set boot_efi=
 if [ -n "$cmdpath" ]; then
-  regexp --set=1:boot_disk '^\(([^,]+),gpt1\)(/.*)?$' "$cmdpath"
+  regexp --set boot_efi '^\(([^)]+)\)' "$cmdpath"
+  if [ -n "$boot_efi" ]; then
+    regexp --set boot_disk '^([^,]+),gpt1$' "$boot_efi"
+    if [ -z "$boot_disk" ]; then
+      set boot_efi=
+    fi
+  fi
 fi
 if [ -n "$boot_disk" ]; then
   set boot_efi="$boot_disk,gpt1"
@@ -100,7 +107,7 @@ fi
 
 if [ -z "$boot_efi" -a -n "$root" ]; then
   set root_boot_disk=
-  regexp --set=1:root_boot_disk '^([^,]+),gpt1$' "$root"
+  regexp --set root_boot_disk '^([^,]+),gpt1$' "$root"
   if [ -n "$root_boot_disk" ]; then
     if [ -f "($root)/cyberhive/grubenv" -a -f "($root)/EFI/BOOT/BOOTX64.EFI" ]; then
       set boot_disk="$root_boot_disk"
@@ -208,13 +215,14 @@ fi
 
 echo "*** CYBERHIVE DIAGNOSTIC BUILD ***"
 echo "Kernel panic auto-reboot disabled; verbose console diagnostics enabled"
-set diagnostic_args="panic=-1 panic_print=0x1f loglevel=7 ignore_loglevel systemd.log_level=debug systemd.journald.forward_to_console=1 rd.debug nomodeset console=tty0 rd.shell rd.emergency=shell"
+set diagnostic_args="panic=-1 panic_print=0x1f loglevel=7 ignore_loglevel systemd.log_level=debug systemd.journald.forward_to_console=1 rd.debug console=tty0 rd.shell rd.emergency=shell"
 linux "$slotroot/vmlinuz" boot=live components noswap username=cyberhive hostname=cyberhive-live live-media=/dev/disk/by-uuid/$slot_uuid live-media-path=$live_path cyberhive.slot=$boot_slot cyberhive.slot_uuid=$slot_uuid $diagnostic_args
 initrd "$slotroot/initrd.img"
 boot
 EOGRUB
 
-grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot echo"
+# Keep every command used by the embedded grub.cfg inside the standalone EFI; Acer does not provide external GRUB modules.
+grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot echo test"
 grub-mkstandalone \
   -O x86_64-efi \
   --modules="$grub_modules" \
