@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberhive.local/schemas/communication-event.schema.json",
+  "title": "CyberHIVE Communication Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id", "timestamp", "sequence", "room_id", "session_id", "actor_id",
+    "actor_type", "target", "event_type", "payload", "correlation_id",
+    "causation_id", "metadata", "previous_hash", "event_hash"
+  ],
+  "properties": {
+    "event_id": {"type": "string", "minLength": 1},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "room_id": {"type": "string", "minLength": 1},
+    "session_id": {"type": "string", "minLength": 1},
+    "actor_id": {"type": "string", "minLength": 1},
+    "actor_type": {"enum": ["human", "agent", "system", "node"]},
+    "target": {"type": "string", "minLength": 1},
+    "event_type": {
+      "enum": [
+        "message.text", "message.voice.transcript", "voice.started", "voice.finished",
+        "presence.join", "presence.leave", "agent.status", "heartbeat",
+        "task.created", "task.claimed", "task.completed", "system.error"
+      ]
+    },
+    "payload": {"type": "object"},
+    "correlation_id": {"type": ["string", "null"]},
+    "causation_id": {"type": ["string", "null"]},
+    "metadata": {"type": "object"},
+    "previous_hash": {"type": ["string", "null"]},
+    "event_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
