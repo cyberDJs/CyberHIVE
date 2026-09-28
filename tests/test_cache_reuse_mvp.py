@@ -28,6 +28,14 @@ class CacheReuseMVPTest(unittest.TestCase):
         )
         self.assertEqual(left.key(), right.key())
 
+    def test_unordered_collections_are_canonicalized_before_hashing(self):
+        from cyberhive_core.cache_reuse import _stable
+
+        self.assertEqual(_stable({"zeta", "alpha", "middle"}), ["alpha", "middle", "zeta"])
+        left = CanonicalOperation(operation="cache.set", normalized_input={"items": {"zeta", "alpha", "middle"}})
+        right = CanonicalOperation(operation="cache.set", normalized_input={"items": {"middle", "zeta", "alpha"}})
+        self.assertEqual(left.key(), right.key())
+
     def test_exact_cache_hit_and_decision(self):
         cache = CacheFabric()
         op = CanonicalOperation(operation="runtime.status", normalized_input={"node": "alpha"}, revision=7)

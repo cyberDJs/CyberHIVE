@@ -248,16 +248,51 @@ class LocalResourceGuard:
 
 
 def resource_request_from_payload(payload: Mapping[str, Any]) -> ResourceRequest:
+    """Parse an explicit resource request from payload-level fields.
+
+    This helper intentionally keeps the historical generic fallback values. Use
+    ``resource_request_for_action_payload`` when an action type is available and
+    action-specific defaults should be preserved before applying overrides.
+    """
+
+    return _request_from_payload(payload, default=ResourceRequest())
+
+
+def resource_request_for_action_payload(action: str, payload: Mapping[str, Any]) -> ResourceRequest:
+    """Build a resource request from action defaults plus explicit overrides.
+
+    Empty payloads should not erase the stronger defaults for actions such as
+    ``prewarm_model``. Overrides may be supplied either under
+    ``payload["resource_request"]`` or as top-level resource fields.
+    """
+
+    return _request_from_payload(payload, default=default_request_for_action(action))
+
+
+def _request_from_payload(payload: Mapping[str, Any], *, default: ResourceRequest) -> ResourceRequest:
     raw = payload.get("resource_request", {})
     if not isinstance(raw, Mapping):
         raw = {}
+
+    def pick(name: str, fallback: Any) -> Any:
+        if name in raw:
+            return raw[name]
+        if name in payload:
+            return payload[name]
+        return fallback
+
+    metadata = dict(default.metadata)
+    raw_metadata = raw.get("metadata", payload.get("metadata", {}))
+    if isinstance(raw_metadata, Mapping):
+        metadata.update(raw_metadata)
+
     return ResourceRequest(
-        cpu_units=_finite(raw.get("cpu_units", payload.get("cpu_units", 0.1)), name="cpu_units"),
-        memory_mb=_finite(raw.get("memory_mb", payload.get("memory_mb", 64.0)), name="memory_mb"),
-        vram_mb=_finite(raw.get("vram_mb", payload.get("vram_mb", 0.0)), name="vram_mb"),
-        io_weight=_finite(raw.get("io_weight", payload.get("io_weight", 0.1)), name="io_weight"),
-        concurrency_slots=int(raw.get("concurrency_slots", payload.get("concurrency_slots", 1))),
-        metadata=dict(raw.get("metadata", {})) if isinstance(raw.get("metadata", {}), Mapping) else {},
+        cpu_units=_finite(pick("cpu_units", default.cpu_units), name="cpu_units"),
+        memory_mb=_finite(pick("memory_mb", default.memory_mb), name="memory_mb"),
+        vram_mb=_finite(pick("vram_mb", default.vram_mb), name="vram_mb"),
+        io_weight=_finite(pick("io_weight", default.io_weight), name="io_weight"),
+        concurrency_slots=int(pick("concurrency_slots", default.concurrency_slots)),
+        metadata=metadata,
     )
 
 

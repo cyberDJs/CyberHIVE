@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import unittest
 
-from cyberhive_core.resource_guard import LocalResourceGuard, ReservationStatus, ResourceBudget, ResourceRequest, resource_request_from_payload
+from cyberhive_core.resource_guard import (
+    LocalResourceGuard,
+    ReservationStatus,
+    ResourceBudget,
+    ResourceRequest,
+    resource_request_for_action_payload,
+    resource_request_from_payload,
+)
 
 
 class ResourceGuardTests(unittest.TestCase):
@@ -28,6 +35,22 @@ class ResourceGuardTests(unittest.TestCase):
     def test_request_can_be_parsed_from_payload(self) -> None:
         request = resource_request_from_payload({"resource_request": {"cpu_units": 0.3, "memory_mb": 256, "vram_mb": 512, "io_weight": 0.2}})
         self.assertEqual(request.vram_mb, 512)
+
+    def test_action_defaults_apply_before_payload_overrides(self) -> None:
+        defaulted = resource_request_for_action_payload("prewarm_model", {})
+        self.assertEqual(defaulted.memory_mb, 256.0)
+        self.assertEqual(defaulted.vram_mb, 512.0)
+
+        overridden = resource_request_for_action_payload("prewarm_model", {"resource_request": {"vram_mb": 128.0}})
+        self.assertEqual(overridden.memory_mb, 256.0)
+        self.assertEqual(overridden.vram_mb, 128.0)
+
+    def test_action_default_can_deny_over_budget_without_explicit_payload(self) -> None:
+        guard = LocalResourceGuard(node_id="node.beta", budget=ResourceBudget(cpu_units=1, memory_mb=512, vram_mb=256, io_weight=1, max_concurrent=1))
+        request = resource_request_for_action_payload("prewarm_model", {})
+        denied = guard.reserve(action="prewarm_model", request=request, dry_run=True)
+        self.assertEqual(denied.status, ReservationStatus.DENIED)
+        self.assertIn("vram", denied.reason)
 
 
 if __name__ == "__main__":
