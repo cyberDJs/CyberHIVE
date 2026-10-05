@@ -10,6 +10,12 @@
 
 Do not send Wi-Fi credentials, Tailscale auth material or private SSH keys through chat, Slack or GitHub.
 
+## Physical validation invariants
+
+On Acer-class UEFI firmware the standalone loader may expose `cmdpath=(hd0,gpt1)/EFI/BOOT`. The embedded GRUB logic must derive `boot_disk=hd0`, construct slot A as `(hd0,gpt2)/slots/A` (slot B as GPT3), and pass `cyberhive.slot=A|B` on the kernel command line. A value such as `(,gpt2)` is a bootloader parent-detection failure, not a missing slot payload.
+
+`/run/cyberhive/state/persistence-state` is non-secret operational health metadata. It must be readable by the unprivileged `cyberhive-live-health` / welcome path while persistent STATE contents, Tailscale state, SSH keys and OTA state remain protected. The expected successful form is `mounted:<state-device>:<usb-parent>:<slot>`.
+
 ## Normal unattended boot
 
 The appliance mounts `CYBERHIVE_STATE`, restores saved Wi-Fi profiles, bind-mounts persistent Tailscale state, restores persistent SSH host keys and owner authorized keys, starts Tailscale, SSH and the web service, and runs the boot health gate.
