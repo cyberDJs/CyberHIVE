@@ -98,6 +98,16 @@ grep -F 'cyberhive_verify_live_slot' "$persist_init" >/dev/null
 grep -F 'cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_STATE_LABEL"' "$persist_init" >/dev/null
 assert_before "$persist_init" 'cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_STATE_LABEL"' 'mount -o rw,nodev,nosuid "$state_dev" "$persist"'
 if grep -F 'blkid -L' "$persist_init"; then echo 'persist-init must not resolve critical siblings by global label' >&2; exit 1; fi
+grep -F 'write_persistence_state()' "$persist_init" >/dev/null
+grep -F 'chmod 0644 "$run_state/persistence-state"' "$persist_init" >/dev/null
+for persistence_state in invalid-slot live-medium-mismatch non-usb-parent sibling-label-missing-or-ambiguous mounted-state-mismatch; do
+  grep -F "write_persistence_state '$persistence_state'" "$persist_init" >/dev/null
+done
+grep -F 'write_persistence_state "mounted:$state_dev:$parent:$current"' "$persist_init" >/dev/null
+if grep -F 'chmod 0640 "$run_state/persistence-state"' "$persist_init"; then
+  echo 'persistence health state must remain readable by unprivileged health tooling' >&2
+  exit 1
+fi
 
 firstboot="$root/usr/local/sbin/cyberhive-firstboot"
 grep -F 'state/network' "$firstboot" >/dev/null
@@ -213,6 +223,7 @@ grep -F 'selected_slot="($slotdev)"' "$builder" >/dev/null
 grep -F 'probe --fs-uuid --set=slot_uuid "$selected_slot"' "$builder" >/dev/null
 grep -F 'cannot prove selected slot filesystem UUID' "$builder" >/dev/null
 grep -F 'live-media=/dev/disk/by-uuid/$slot_uuid' "$builder" >/dev/null
+grep -F 'cyberhive.slot=$boot_slot' "$builder" >/dev/null
 grep -F 'boot=live components noswap' "$builder" >/dev/null
 python3 - "$builder" <<'PY'
 from pathlib import Path
@@ -239,7 +250,10 @@ required = [
 for needle in required:
     if needle not in cfg:
         raise AssertionError(f'missing GRUB parent proof fragment: {needle}')
-if cfg.index('insmod test') > cfg.index('if [ -n "$cmdpath" ]; then'):
+first_bracket_condition = re.search(r'(?m)^\s*if \[', cfg)
+if first_bracket_condition is None:
+    raise AssertionError('embedded GRUB config contains no bracket condition to validate')
+if cfg.index('insmod test') > first_bracket_condition.start():
     raise AssertionError('test.mod must be loaded before the first bracket condition on Acer standalone GRUB')
 for forbidden in ['insmod env', 'cyberhive_efi_candidate', 'cyberhive_efi_count']:
     if forbidden in cfg:
@@ -370,6 +384,10 @@ acer_cmdpath = run_parent_proof(cmdpath='(hd0,gpt1)/EFI/BOOT')
 assert acer_cmdpath['status'] == 'ok'
 assert acer_cmdpath['boot_disk'] == 'hd0'
 assert acer_cmdpath['boot_efi'] == 'hd0,gpt1'
+acer_slotdev = f"{acer_cmdpath['boot_disk']},gpt2"
+assert acer_slotdev == 'hd0,gpt2'
+assert f"({acer_slotdev})" == '(hd0,gpt2)'
+assert f"({acer_slotdev})/slots/A" == '(hd0,gpt2)/slots/A'
 
 root_ok = run_parent_proof(
     cmdpath='/EFI/BOOT/BOOTX64.EFI',
