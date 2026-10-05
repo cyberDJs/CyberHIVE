@@ -12,6 +12,7 @@ infra/live-usb/debian-live/config/includes.chroot/usr/local/lib/cyberhive-device
 infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-host-disk-guard
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-persist-init
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-firstboot
+infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-tty1-getty
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-management-firewall
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-update
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-update-check
@@ -25,6 +26,8 @@ infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-b
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-update-check.service
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-update-check.timer
 infra/live-usb/debian-live/config/includes.chroot/etc/profile.d/20-cyberhive-firstboot.sh
+infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/getty@tty1.service.d/20-cyberhive-firstboot-autologin.conf
+scripts/test-cyberhive-firstboot-tty1-autologin.py
 infra/live-usb/debian-live/config/includes.chroot/etc/cyberhive/bootstrap/authorized_keys
 infra/live-usb/debian-live/config/includes.chroot/etc/cyberhive/ota/allowed_signers
 .github/workflows/live-appliance-v0-3.yml'
@@ -41,6 +44,7 @@ for f in \
   "$root/usr/local/bin/cyberhive-host-disk-guard" \
   "$root/usr/local/sbin/cyberhive-persist-init" \
   "$root/usr/local/sbin/cyberhive-firstboot" \
+  "$root/usr/local/sbin/cyberhive-tty1-getty" \
   "$root/usr/local/sbin/cyberhive-management-firewall" \
   "$root/usr/local/sbin/cyberhive-update" \
   "$root/usr/local/sbin/cyberhive-update-check" \
@@ -49,6 +53,7 @@ for f in \
   sh -n "$f"
 done
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-web").read_text())'
+python3 scripts/test-cyberhive-firstboot-tty1-autologin.py
 
 line_of() {
   file=$1

@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+
+config_env=${CYBERHIVE_CONFIG_ENV:-/etc/cyberhive/live/config.env}
+. "$config_env"
+
+agetty_bin=${CYBERHIVE_AGETTY_BIN:-/sbin/agetty}
+tty_name=${1:-tty1}
+term_name=${2:-linux}
+marker="$CYBERHIVE_PERSIST_ROOT/state/provisioned"
+
+if [ ! -e "$marker" ]; then
+  exec "$agetty_bin" --autologin cyberhive --noclear "$tty_name" "$term_name"
+fi
+
+exec "$agetty_bin" --noclear "$tty_name" "$term_name"

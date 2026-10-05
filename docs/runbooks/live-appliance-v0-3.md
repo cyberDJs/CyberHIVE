@@ -3,7 +3,7 @@
 ## First physical boot
 
 1. Boot the v0.3 CyberHIVE USB in UEFI mode.
-2. Wait for tty1 auto-login and the first-boot wizard.
+2. Wait for the first-boot-only tty1 auto-login and provisioning wizard. After provisioning writes `state/provisioned`, later boots return tty1 to the normal login prompt.
 3. Select/enter the Wi-Fi SSID locally and enter the Wi-Fi password at the hidden prompt.
 4. Open the printed Tailscale enrollment URL on a trusted device and authorize `cyberhive-dev-01`.
 5. Confirm the welcome screen reports a Tailscale address and key-based SSH mode.

@@ -52,6 +52,10 @@ If candidate persistence is unavailable, userspace does not attempt an unverifie
 
 The CyberHIVE device is identified by matching labels, a shared parent and `TRAN=usb`. It remains allowed when the kernel reports `RM=0`. Every other physical disk with a writable mounted filesystem is a guard violation.
 
+## Physical console first-boot boundary
+
+On an unprovisioned USB, tty1 may auto-login the local `cyberhive` account only after the persistent-state bootstrap has been ordered. The auto-login exists solely to launch the one-time local provisioning wizard. Once `CYBERHIVE_STATE/state/provisioned` exists, tty1 returns to normal getty login behavior. This does not expose SSH on LAN and does not weaken the Tailscale-only SSH boundary.
+
 ## Secret handling
 
 The repository contains public SSH keys only. First-boot Wi-Fi entry uses a no-echo local tty prompt. Support/evidence tooling must not read NetworkManager secrets, Tailscale state, SSH private host keys, pairing codes, passwords or the release signing private key.
