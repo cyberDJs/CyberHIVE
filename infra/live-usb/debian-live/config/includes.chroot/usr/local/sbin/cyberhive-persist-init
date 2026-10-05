@@ -8,11 +8,18 @@ persist="$CYBERHIVE_PERSIST_ROOT"
 run_state="$CYBERHIVE_STATE_DIR"
 mkdir -p "$persist" "$run_state"
 
+# This is operational health metadata, not a secret. Keep it readable by
+# unprivileged health/welcome tooling while STATE contents remain protected.
+write_persistence_state() {
+  printf '%s\n' "$1" >"$run_state/persistence-state"
+  chmod 0644 "$run_state/persistence-state"
+}
+
 current=$(sed -n 's/.*cyberhive\.slot=\([AB]\).*/\1/p' /proc/cmdline | head -n 1)
 case "$current" in
   A|B) ;;
   *)
-    printf '%s\n' 'invalid-slot' >"$run_state/persistence-state"
+    write_persistence_state 'invalid-slot'
     echo 'cyberhive-persist-init: current CyberHIVE slot unknown' >&2
     exit 2
     ;;
@@ -20,13 +27,13 @@ esac
 
 live_dev=$(cyberhive_live_medium_device 2>/dev/null || true)
 if [ -z "$live_dev" ] || ! cyberhive_verify_live_slot "$current" "$live_dev"; then
-  printf '%s\n' 'live-medium-mismatch' >"$run_state/persistence-state"
+  write_persistence_state 'live-medium-mismatch'
   echo 'cyberhive-persist-init: booted live medium does not match declared slot' >&2
   exit 2
 fi
 parent=$(cyberhive_parent_device "$live_dev" 2>/dev/null || true)
 if [ -z "$parent" ] || ! cyberhive_require_usb_parent "$parent"; then
-  printf '%s\n' 'non-usb-parent' >"$run_state/persistence-state"
+  write_persistence_state 'non-usb-parent'
   echo 'cyberhive-persist-init: refusing non-USB persistence parent' >&2
   exit 2
 fi
@@ -34,7 +41,7 @@ fi
 state_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_STATE_LABEL" 2>/dev/null || true)
 efi_dev=$(cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_EFI_LABEL" 2>/dev/null || true)
 if [ -z "$state_dev" ] || [ -z "$efi_dev" ]; then
-  printf '%s\n' 'sibling-label-missing-or-ambiguous' >"$run_state/persistence-state"
+  write_persistence_state 'sibling-label-missing-or-ambiguous'
   echo 'cyberhive-persist-init: unique STATE/EFI siblings not found on booted USB parent' >&2
   exit 2
 fi
@@ -44,7 +51,7 @@ if mountpoint -q "$persist"; then
   mounted_state=$(printf '%s' "$mounted_state" | sed 's/\[.*$//')
   [ -n "$mounted_state" ] \
     && [ "$(readlink -f "$mounted_state" 2>/dev/null || printf '%s' "$mounted_state")" = "$(readlink -f "$state_dev" 2>/dev/null || printf '%s' "$state_dev")" ] || {
-    printf '%s\n' 'mounted-state-mismatch' >"$run_state/persistence-state"
+    write_persistence_state 'mounted-state-mismatch'
     echo 'cyberhive-persist-init: mounted STATE identity mismatch' >&2
     exit 2
   }
@@ -78,5 +85,4 @@ if ! mountpoint -q /var/lib/tailscale; then
   mount --bind "$persist/state/tailscale" /var/lib/tailscale
 fi
 
-printf 'mounted:%s:%s:%s\n' "$state_dev" "$parent" "$current" >"$run_state/persistence-state"
-chmod 0640 "$run_state/persistence-state"
+write_persistence_state "mounted:$state_dev:$parent:$current"
