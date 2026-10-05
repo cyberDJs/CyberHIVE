@@ -1,0 +1,376 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import fcntl
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any, Callable
+
+SCHEMA = "cyberhive.guardian.state.v1"
+EVIDENCE_SCHEMA = "cyberhive.guardian.evidence.v1"
+MAX_ATTEMPTS = 3
+WINDOW_SECONDS = 600
+MIN_INTERVAL_SECONDS = 60
+CIRCUIT_SECONDS = 900
+
+LOCAL_BLOCKERS = ("host-disk-guard", "persistence-unavailable", "onboarding-inactive")
+LOCAL_ACTIONS = (
+    ("ssh-inactive", "restart-ssh", "L0"),
+    ("web-inactive", "restart-web", "L0"),
+    ("mdns-inactive", "restart-mdns", "L0"),
+)
+
+
+def _fresh_state() -> dict[str, Any]:
+    return {"schema": SCHEMA, "actions": {}}
+
+
+def _normalize_state(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict) or raw.get("schema") != SCHEMA:
+        return _fresh_state()
+    actions = raw.get("actions")
+    if not isinstance(actions, dict):
+        return _fresh_state()
+    return {"schema": SCHEMA, "actions": dict(actions)}
+
+
+def _health_section(payload: dict[str, Any]) -> dict[str, Any]:
+    health = payload.get("health")
+    return health if isinstance(health, dict) else {}
+
+
+def _reasons(health: dict[str, Any], key: str) -> list[str]:
+    reasons = health.get("reasons")
+    if not isinstance(reasons, dict):
+        return []
+    values = reasons.get(key)
+    if not isinstance(values, list):
+        return []
+    return [str(value) for value in values]
+
+
+def _candidate(payload: dict[str, Any]) -> tuple[str | None, str | None, str]:
+    health = _health_section(payload)
+    local_reasons = _reasons(health, "local_safe")
+    connected_reasons = _reasons(health, "connected")
+    remote_reasons = _reasons(health, "remote_ready")
+
+    if any(reason in local_reasons for reason in LOCAL_BLOCKERS):
+        return None, None, "manual-required"
+
+    for reason, action, level in LOCAL_ACTIONS:
+        if reason in local_reasons:
+            return action, level, "repair"
+
+    if health.get("local_safe") == "fail" and local_reasons:
+        return None, None, "manual-required"
+
+    if "no-local-network" in connected_reasons:
+        return "reconnect-network", "L1", "repair"
+
+    if "tailscaled-inactive" in remote_reasons:
+        return "restart-tailscaled", "L0", "repair"
+
+    if (
+        "tailscale-backend-not-running" in remote_reasons
+        or "tailscale-ip-missing" in remote_reasons
+    ):
+        return "restart-tailscaled", "L1", "repair"
+
+    return None, None, "healthy"
+
+
+def plan_repair(payload: dict[str, Any], raw_state: Any, now: int) -> dict[str, Any]:
+    state = _normalize_state(raw_state)
+    action, level, reason = _candidate(payload)
+    if action is None:
+        return {"action": None, "level": None, "reason": reason, "state": state}
+
+    actions = state["actions"]
+    current = actions.get(action)
+    if not isinstance(current, dict):
+        current = {}
+
+    window_start = int(current.get("window_start", now))
+    attempts = int(current.get("attempts", 0))
+    last_attempt = int(current.get("last_attempt", 0))
+    circuit_until = int(current.get("circuit_until", 0))
+
+    if circuit_until > now:
+        return {
+            "action": None,
+            "level": level,
+            "reason": "circuit-open",
+            "blocked_action": action,
+            "state": state,
+        }
+
+    if now < window_start or now - window_start >= WINDOW_SECONDS:
+        window_start = now
+        attempts = 0
+        last_attempt = 0
+        circuit_until = 0
+
+    if last_attempt and now - last_attempt < MIN_INTERVAL_SECONDS:
+        return {
+            "action": None,
+            "level": level,
+            "reason": "cooldown",
+            "blocked_action": action,
+            "state": state,
+        }
+
+    if attempts >= MAX_ATTEMPTS:
+        current = {
+            "window_start": window_start,
+            "attempts": attempts,
+            "last_attempt": last_attempt,
+            "circuit_until": now + CIRCUIT_SECONDS,
+        }
+        actions[action] = current
+        return {
+            "action": None,
+            "level": level,
+            "reason": "circuit-open",
+            "blocked_action": action,
+            "state": state,
+        }
+
+    current = {
+        "window_start": window_start,
+        "attempts": attempts + 1,
+        "last_attempt": now,
+        "circuit_until": 0,
+    }
+    actions[action] = current
+    return {"action": action, "level": level, "reason": "repair", "state": state}
+
+
+def _run(runner: Callable[..., subprocess.CompletedProcess[str]], argv: list[str]) -> subprocess.CompletedProcess[str]:
+    return runner(argv, capture_output=True, text=True, check=False)
+
+
+def _blocked(reason: str) -> dict[str, Any]:
+    return {"status": "blocked", "reason": reason}
+
+
+def _command_result(action: str, proc: subprocess.CompletedProcess[str]) -> dict[str, Any]:
+    if proc.returncode == 0:
+        return {"status": "executed", "reason": action}
+    return {"status": "failed", "reason": action, "returncode": proc.returncode}
+
+
+def execute_action(
+    action: str,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict[str, Any]:
+    allowed = {
+        "restart-web",
+        "restart-ssh",
+        "restart-mdns",
+        "restart-tailscaled",
+        "reconnect-network",
+    }
+    if action not in allowed:
+        return _blocked("unknown-action")
+
+    guard = _run(runner, ["cyberhive-host-disk-guard"])
+    if guard.returncode != 0:
+        return _blocked("host-disk-guard")
+
+    firewall = _run(
+        runner,
+        ["systemctl", "is-active", "--quiet", "cyberhive-management-firewall.service"],
+    )
+    if firewall.returncode != 0:
+        return _blocked("management-firewall-inactive")
+
+    if action == "restart-web":
+        return _command_result(
+            action, _run(runner, ["systemctl", "restart", "cyberhive-web.service"])
+        )
+
+    if action == "restart-ssh":
+        sshd = _run(runner, ["/usr/sbin/sshd", "-t"])
+        if sshd.returncode != 0:
+            return _blocked("sshd-config-invalid")
+        return _command_result(action, _run(runner, ["systemctl", "restart", "ssh.service"]))
+
+    if action == "restart-mdns":
+        return _command_result(
+            action, _run(runner, ["systemctl", "restart", "avahi-daemon.service"])
+        )
+
+    if action == "restart-tailscaled":
+        return _command_result(
+            action, _run(runner, ["systemctl", "restart", "tailscaled.service"])
+        )
+
+    nm_active = _run(
+        runner, ["systemctl", "is-active", "--quiet", "NetworkManager.service"]
+    )
+    if nm_active.returncode != 0:
+        restarted = _run(runner, ["systemctl", "restart", "NetworkManager.service"])
+        if restarted.returncode != 0:
+            return _command_result(action, restarted)
+
+    for argv in (
+        ["nmcli", "connection", "reload"],
+        ["nmcli", "networking", "on"],
+        ["nmcli", "radio", "wifi", "on"],
+    ):
+        proc = _run(runner, argv)
+        if proc.returncode != 0:
+            return _command_result(action, proc)
+
+    status = _run(runner, ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device", "status"])
+    if status.returncode != 0:
+        return _command_result(action, status)
+
+    for line in status.stdout.splitlines():
+        parts = line.split(":", 2)
+        if len(parts) != 3:
+            continue
+        device, dev_type, dev_state = parts
+        if dev_type not in {"ethernet", "wifi"}:
+            continue
+        if dev_state == "connected":
+            continue
+        _run(runner, ["nmcli", "--wait", "10", "device", "connect", device])
+
+    return {"status": "executed", "reason": action}
+
+
+
+PERSIST_ROOT = Path("/var/lib/cyberhive-persist")
+STATE_PATH = PERSIST_ROOT / "state/guardian/state.json"
+EVIDENCE_PATH = Path("/run/cyberhive/evidence/guardian.json")
+LOCK_PATH = Path("/run/cyberhive/guardian.lock")
+
+
+def _atomic_json(path: Path, value: dict[str, Any], mode: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n"
+    with tmp.open("w", encoding="utf-8") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def _load_state(path: Path) -> tuple[dict[str, Any], bool]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return _fresh_state(), True
+    except (OSError, json.JSONDecodeError):
+        return _fresh_state(), False
+    if not isinstance(raw, dict):
+        return _fresh_state(), False
+    if raw.get("schema") != SCHEMA or not isinstance(raw.get("actions"), dict):
+        return _fresh_state(), False
+    return _normalize_state(raw), True
+
+
+def run_cycle(
+    health_payload: dict[str, Any],
+    *,
+    state_path: Path,
+    evidence_path: Path,
+    persisted: bool,
+    now: int,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict[str, Any]:
+    if persisted:
+        state, state_valid = _load_state(state_path)
+    else:
+        state, state_valid = _fresh_state(), True
+
+    if not state_valid:
+        plan = {
+            "action": None,
+            "level": None,
+            "reason": "guardian-state-invalid",
+            "state": state,
+        }
+        result = _blocked("guardian-state-invalid")
+    else:
+        plan = plan_repair(health_payload, state, now)
+        if persisted:
+            _atomic_json(state_path, plan["state"], 0o600)
+
+        action = plan.get("action")
+        if action is not None and not persisted:
+            result = _blocked("persistence-unavailable")
+        elif action is not None:
+            result = execute_action(str(action), runner)
+        else:
+            result = {"status": "idle", "reason": str(plan.get("reason", "none"))}
+
+    classes = _health_section(health_payload)
+    evidence = {
+        "schema": EVIDENCE_SCHEMA,
+        "timestamp": now,
+        "health": {
+            "local_safe": classes.get("local_safe", "unknown"),
+            "connected": classes.get("connected", "unknown"),
+            "remote_ready": classes.get("remote_ready", "unknown"),
+        },
+        "plan": {
+            "action": plan.get("action"),
+            "level": plan.get("level"),
+            "reason": plan.get("reason"),
+            "blocked_action": plan.get("blocked_action"),
+        },
+        "result": result,
+    }
+    _atomic_json(evidence_path, evidence, 0o640)
+    return evidence
+
+
+def main() -> int:
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with LOCK_PATH.open("a+", encoding="utf-8") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return 0
+
+        proc = subprocess.run(
+            ["/usr/local/bin/cyberhive-live-health"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            return 2
+        try:
+            health_payload = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return 2
+        if not isinstance(health_payload, dict):
+            return 2
+
+        run_cycle(
+            health_payload,
+            state_path=STATE_PATH,
+            evidence_path=EVIDENCE_PATH,
+            persisted=os.path.ismount(PERSIST_ROOT),
+            now=int(time.time()),
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

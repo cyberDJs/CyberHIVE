@@ -65,3 +65,17 @@ LOCAL_SAFE still requires the local management/security boundary to be healthy, 
 Loss of internet or Tailscale therefore cannot by itself cause a healthy candidate rollback. Conversely, self-healing is not allowed to disable the host-disk guard, open ordinary LAN SSH or weaken local pairing in order to regain REMOTE_READY.
 
 WB-HIVE-BOOT-0009 adds classification and acceptance semantics only; it adds no automated Guardian repair actions.
+
+## v0.3.1 Guardian repair boundary
+
+WB-HIVE-BOOT-0010 extends allowed persistent writes with:
+
+- state/guardian/state.json - root-only bounded retry/circuit metadata.
+
+Guardian runtime evidence under /run/cyberhive/evidence/guardian.json is non-secret and ephemeral.
+
+Before every automatic repair, Guardian reruns cyberhive-host-disk-guard. It also requires cyberhive-management-firewall.service to be active before restoring any local/network/remote service.
+
+Guardian may only perform its explicit L0/L1 action allowlist. It must not reboot, power off, edit GRUB/EFI state, write A/B runtime slots, format/repartition media, enable LAN SSH, disable the management firewall, or change pairing/authentication policy.
+
+Malformed Guardian persistent state is fail-closed and is not silently replaced, because silently resetting retry counters could bypass the circuit breaker.

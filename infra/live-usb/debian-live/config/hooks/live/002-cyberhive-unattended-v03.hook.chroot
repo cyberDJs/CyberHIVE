@@ -30,3 +30,4 @@ systemctl enable cyberhive-management-firewall.service
 systemctl enable tailscaled.service
 systemctl enable cyberhive-boot-commit.service
 systemctl enable cyberhive-update-check.timer
+systemctl enable cyberhive-guardian.timer

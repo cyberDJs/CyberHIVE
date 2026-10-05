@@ -9,8 +9,14 @@ on:
       - 'scripts/test-cyberhive-web-pairing-limit.py'
       - 'scripts/test-cyberhive-health-classifier.py'
       - 'scripts/test-cyberhive-offline-health-contract.py'
+      - 'scripts/test-cyberhive-guardian-plan.py'
+      - 'scripts/test-cyberhive-guardian-executor.py'
+      - 'scripts/test-cyberhive-guardian-wiring.py'
+      - 'scripts/test-cyberhive-guardian-state-cycle.py'
+      - 'scripts/test-cyberhive-guardian-gate.py'
       - 'docs/work-blocks/WB-HIVE-BOOT-0006-unattended-ota-v0-3.md'
       - 'docs/work-blocks/WB-HIVE-BOOT-0009-v0-3-1-health-contract.md'
+      - 'docs/work-blocks/WB-HIVE-BOOT-0010-guardian-l0-l1.md'
       - 'docs/adr/ADR-0026-cyberhive-unattended-single-usb-ab-ota.md'
       - 'docs/runbooks/live-appliance-v0-3.md'
       - 'docs/security/live-appliance-v0-3-safety.md'
@@ -24,6 +30,11 @@ on:
       - 'scripts/test-cyberhive-web-pairing-limit.py'
       - 'scripts/test-cyberhive-health-classifier.py'
       - 'scripts/test-cyberhive-offline-health-contract.py'
+      - 'scripts/test-cyberhive-guardian-plan.py'
+      - 'scripts/test-cyberhive-guardian-executor.py'
+      - 'scripts/test-cyberhive-guardian-wiring.py'
+      - 'scripts/test-cyberhive-guardian-state-cycle.py'
+      - 'scripts/test-cyberhive-guardian-gate.py'
       - '.github/workflows/live-appliance-v0-3.yml'
 
 permissions:
@@ -44,3 +55,8 @@ jobs:
           python3 scripts/test-cyberhive-web-pairing-limit.py
           python3 scripts/test-cyberhive-health-classifier.py
           python3 scripts/test-cyberhive-offline-health-contract.py
+          python3 scripts/test-cyberhive-guardian-plan.py
+          python3 scripts/test-cyberhive-guardian-executor.py
+          python3 scripts/test-cyberhive-guardian-wiring.py
+          python3 scripts/test-cyberhive-guardian-state-cycle.py
+          python3 scripts/test-cyberhive-guardian-gate.py

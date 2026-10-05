@@ -67,3 +67,32 @@ OTA candidate acceptance is based on LOCAL_SAFE. Internet, DNS, Tailscale backen
 The top-level health schema remains cyberhive.live.health.v1 for compatibility. The new health object carries local_safe, connected, remote_ready and deterministic reason lists. Top-level status is ok exactly when LOCAL_SAFE passes.
 
 This work block does not add Guardian repair actions. CONNECTED or REMOTE_READY failure is reported only; automated reconnection/restart policy is a later work block.
+
+## v0.3.1 bounded Guardian L0/L1 repair
+
+WB-HIVE-BOOT-0010 adds a one-shot Guardian evaluated once per minute by cyberhive-guardian.timer.
+
+The Guardian performs at most one allowlisted repair per run and persists retry/circuit state under state/guardian on the validated CyberHIVE STATE partition.
+
+Repair budget per action:
+
+- 3 attempts within 10 minutes,
+- at least 60 seconds between attempts,
+- 15 minute circuit-open interval after exhaustion.
+
+Automatic actions are limited to restarting web/SSH/mDNS/tailscaled and asking NetworkManager to reconnect existing profiles.
+
+Every repair rechecks the host-disk guard and requires the management firewall service to be active. SSH restart additionally requires sshd -t to pass.
+
+The Guardian does not reboot, modify GRUB/EFI/A-B slots, create network credentials, run tailscale up or weaken management authentication.
+
+Operational inspection:
+
+~~~
+systemctl status cyberhive-guardian.timer
+systemctl status cyberhive-guardian.service
+cat /run/cyberhive/evidence/guardian.json
+sudo cat /var/lib/cyberhive-persist/state/guardian/state.json
+~~~
+
+Malformed Guardian state, persistence failure, onboarding failure, host-disk-guard failure or firewall failure is fail-closed and requires operator intervention or a later recovery work block.
