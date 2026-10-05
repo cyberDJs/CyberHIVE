@@ -55,3 +55,13 @@ The CyberHIVE device is identified by matching labels, a shared parent and `TRAN
 ## Secret handling
 
 The repository contains public SSH keys only. First-boot Wi-Fi entry uses a no-echo local tty prompt. Support/evidence tooling must not read NetworkManager secrets, Tailscale state, SSH private host keys, pairing codes, passwords or the release signing private key.
+
+## v0.3.1 health-gate security clarification
+
+OTA acceptance is fail-closed on LOCAL_SAFE, not on external connectivity.
+
+LOCAL_SAFE still requires the local management/security boundary to be healthy, including host-disk guard PASS, required local services and validated usb-state persistence. Tailscale service/backend/IP are reported under REMOTE_READY and are not proof that the local runtime is safe.
+
+Loss of internet or Tailscale therefore cannot by itself cause a healthy candidate rollback. Conversely, self-healing is not allowed to disable the host-disk guard, open ordinary LAN SSH or weaken local pairing in order to regain REMOTE_READY.
+
+WB-HIVE-BOOT-0009 adds classification and acceptance semantics only; it adds no automated Guardian repair actions.

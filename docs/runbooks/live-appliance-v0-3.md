@@ -53,3 +53,17 @@ The governed image build records disk usage before and after deleting disposable
 ## Recovery boundary
 
 If firmware, the kernel, or hardware hangs before userspace and no working hardware watchdog resets the machine, physical intervention can still be required. A second immutable rescue USB remains recommended when available, but v0.3 is designed so normal runtime updates do not require one.
+
+## v0.3.1 offline-safe health contract
+
+WB-HIVE-BOOT-0009 splits runtime health into three deterministic classes:
+
+- LOCAL_SAFE: local boot/storage/security/control-plane contract,
+- CONNECTED: non-Tailscale local network availability,
+- REMOTE_READY: Tailscale remote-management readiness.
+
+OTA candidate acceptance is based on LOCAL_SAFE. Internet, DNS, Tailscale backend state and Tailscale IP are not candidate acceptance requirements.
+
+The top-level health schema remains cyberhive.live.health.v1 for compatibility. The new health object carries local_safe, connected, remote_ready and deterministic reason lists. Top-level status is ok exactly when LOCAL_SAFE passes.
+
+This work block does not add Guardian repair actions. CONNECTED or REMOTE_READY failure is reported only; automated reconnection/restart policy is a later work block.

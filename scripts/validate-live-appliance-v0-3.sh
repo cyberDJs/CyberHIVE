@@ -10,6 +10,8 @@ infra/live-usb/debian-live/build-unattended-disk-image.sh
 infra/live-usb/debian-live/config/hooks/live/002-cyberhive-unattended-v03.hook.chroot
 infra/live-usb/debian-live/config/includes.chroot/usr/local/lib/cyberhive-device.sh
 infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-host-disk-guard
+infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-health-classify
+infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-live-health
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-persist-init
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-firstboot
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-management-firewall
@@ -39,6 +41,7 @@ for f in \
   infra/live-usb/debian-live/config/hooks/live/002-cyberhive-unattended-v03.hook.chroot \
   "$root/usr/local/lib/cyberhive-device.sh" \
   "$root/usr/local/bin/cyberhive-host-disk-guard" \
+  "$root/usr/local/bin/cyberhive-live-health" \
   "$root/usr/local/sbin/cyberhive-persist-init" \
   "$root/usr/local/sbin/cyberhive-firstboot" \
   "$root/usr/local/sbin/cyberhive-management-firewall" \
@@ -49,6 +52,8 @@ for f in \
   sh -n "$f"
 done
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-web").read_text())'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-health-classify").read_text())'
+test -x "$root/usr/local/bin/cyberhive-health-classify"
 
 line_of() {
   file=$1
@@ -143,6 +148,17 @@ grep -F 'malformed persisted failed-sequence; refusing OTA' "$update" >/dev/null
 assert_before "$update" 'atomic_text "$sequence" "$otadir/pending-sequence"' 'grub-editenv "$envfile" set'
 if grep -n -E '(^|[[:space:]])(dd|mkfs|wipefs|parted|sgdisk)([[:space:]]|$)' "$update"; then echo 'runtime OTA must not perform raw disk or partition mutation' >&2; exit 1; fi
 
+health="$root/usr/local/bin/cyberhive-live-health"
+classifier="$root/usr/local/bin/cyberhive-health-classify"
+grep -F 'cyberhive.health.classes.v1' "$classifier" >/dev/null
+grep -F '"local_safe"' "$classifier" >/dev/null
+grep -F '"connected"' "$classifier" >/dev/null
+grep -F '"remote_ready"' "$classifier" >/dev/null
+grep -F '/usr/local/bin/cyberhive-health-classify' "$health" >/dev/null
+grep -F -- '--argjson health "$health"' "$health" >/dev/null
+grep -F 'cyberhive.live.health.v1' "$health" >/dev/null
+grep -F '[ "$local_safe" = pass ] && status='"'"'ok'"'"'' "$health" >/dev/null
+
 commit="$root/usr/local/sbin/cyberhive-boot-commit"
 grep -F '. /usr/local/lib/cyberhive-device.sh' "$commit" >/dev/null
 grep -F 'cyberhive_live_medium_device' "$commit" >/dev/null
@@ -187,6 +203,19 @@ grep -F 'read_sequence_file()' "$commit" >/dev/null
 grep -F 'malformed persisted current-sequence; rolling back candidate' "$commit" >/dev/null
 grep -F 'quarantine_release "$state_pending_release" "$state_pending_sequence" malformed-current-sequence' "$commit" >/dev/null
 grep -F 'cyberhive-host-disk-guard >/dev/null 2>&1' "$commit" >/dev/null
+grep -F '.health.local_safe == "pass"' "$commit" >/dev/null
+python3 - "$commit" <<'PY_HEALTH_GATE'
+from pathlib import Path
+import sys
+src=Path(sys.argv[1]).read_text()
+start=src.index("health_ok='false'")
+end=src.index("if [ \"$health_ok\" = 'true' ]; then", start)
+gate=src[start:end]
+assert 'cyberhive-live-health' in gate
+assert '.health.local_safe == "pass"' in gate
+assert 'tailscale status' not in gate
+assert 'systemctl is-active --quiet tailscaled.service' not in gate
+PY_HEALTH_GATE
 
 host_guard="$root/usr/local/bin/cyberhive-host-disk-guard"
 grep -F '. /usr/local/lib/cyberhive-device.sh' "$host_guard" >/dev/null

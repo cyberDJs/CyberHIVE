@@ -420,11 +420,7 @@ health_ok='false'
 end=$(( $(date +%s) + 120 ))
 while [ "$(date +%s)" -lt "$end" ]; do
   if cyberhive-host-disk-guard >/dev/null 2>&1 \
-     && systemctl is-active --quiet ssh.service \
-     && systemctl is-active --quiet cyberhive-web.service \
-     && systemctl is-active --quiet tailscaled.service \
-     && tailscale status --json 2>/dev/null | jq -e '.BackendState == "Running"' >/dev/null 2>&1 \
-     && cyberhive-live-health 2>/dev/null | jq -e '.status == "ok" and .host_disk_guard == "pass"' >/dev/null 2>&1; then
+     && cyberhive-live-health 2>/dev/null | jq -e '.health.local_safe == "pass" and .host_disk_guard == "pass"' >/dev/null 2>&1; then
     health_ok='true'
     break
   fi

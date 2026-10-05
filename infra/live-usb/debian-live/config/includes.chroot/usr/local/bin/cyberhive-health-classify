@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import sys
+
+
+def main() -> int:
+    try:
+        observed = json.load(sys.stdin)
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"invalid health observations: {exc}", file=sys.stderr)
+        return 2
+
+    def value(name: str) -> str:
+        raw = observed.get(name, "")
+        return raw if isinstance(raw, str) else str(raw)
+
+    local_reasons: list[str] = []
+    local_checks = (
+        ("onboarding_service", "active", "onboarding-inactive"),
+        ("ssh_service", "active", "ssh-inactive"),
+        ("web_service", "active", "web-inactive"),
+        ("mdns_service", "active", "mdns-inactive"),
+        ("host_disk_guard", "pass", "host-disk-guard"),
+    )
+    for key, expected, reason in local_checks:
+        if value(key) != expected:
+            local_reasons.append(reason)
+
+    persistence = value("persistence")
+    persistence_state = value("persistence_state")
+    if persistence == "usb-state" and not persistence_state.startswith("mounted:"):
+        local_reasons.append("persistence-unavailable")
+
+    connected_reasons: list[str] = []
+    if not value("lan_ip"):
+        connected_reasons.append("no-local-network")
+
+    remote_reasons: list[str] = []
+    if value("tailscale_service") != "active":
+        remote_reasons.append("tailscaled-inactive")
+    if value("tailscale_backend") != "Running":
+        remote_reasons.append("tailscale-backend-not-running")
+    if not value("tailscale_ip"):
+        remote_reasons.append("tailscale-ip-missing")
+
+    result = {
+        "schema": "cyberhive.health.classes.v1",
+        "local_safe": "pass" if not local_reasons else "fail",
+        "connected": "pass" if not connected_reasons else "fail",
+        "remote_ready": "pass" if not remote_reasons else "fail",
+        "reasons": {
+            "local_safe": local_reasons,
+            "connected": connected_reasons,
+            "remote_ready": remote_reasons,
+        },
+    }
+    json.dump(result, sys.stdout, sort_keys=True, separators=(",", ":"))
+    sys.stdout.write("\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
