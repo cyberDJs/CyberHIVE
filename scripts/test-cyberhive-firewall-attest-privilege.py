@@ -7,6 +7,7 @@ ATTEST = CHROOT / "usr/local/bin/cyberhive-management-firewall-attest"
 LIVE = CHROOT / "usr/local/bin/cyberhive-live-health"
 SUDOERS = CHROOT / "etc/sudoers.d/91-cyberhive-firewall-attest"
 HOOK = ROOT / "infra/live-usb/debian-live/config/hooks/live/002-cyberhive-unattended-v03.hook.chroot"
+WEB_SERVICE = CHROOT / "etc/systemd/system/cyberhive-web.service"
 
 attest = ATTEST.read_text()
 live = LIVE.read_text()
@@ -17,8 +18,11 @@ assert SUDOERS.is_file(), f"missing sudoers capability: {SUDOERS}"
 
 sudoers = SUDOERS.read_text()
 hook = HOOK.read_text()
+web_service = WEB_SERVICE.read_text()
 assert "chmod 0440 /etc/sudoers.d/91-cyberhive-firewall-attest" in hook
-assert "cyberhive ALL=(root) NOPASSWD:" in sudoers
+assert "User=cyberhive-web" in web_service
+assert "cyberhive ALL=(root) NOPASSWD: /usr/local/bin/cyberhive-management-firewall-attest" in sudoers
+assert "cyberhive-web ALL=(root) NOPASSWD: /usr/local/bin/cyberhive-management-firewall-attest" in sudoers
 assert "/usr/local/bin/cyberhive-management-firewall-attest" in sudoers
 assert "cyberhive-management-firewall " not in sudoers
 assert "iptables" not in sudoers
