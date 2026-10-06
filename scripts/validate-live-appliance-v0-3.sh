@@ -26,8 +26,10 @@ infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-b
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-update-check.service
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-update-check.timer
 infra/live-usb/debian-live/config/includes.chroot/etc/profile.d/20-cyberhive-firstboot.sh
+infra/live-usb/debian-live/config/includes.chroot/etc/live/config.conf.d/10-cyberhive-identity.conf
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/getty@tty1.service.d/20-cyberhive-firstboot-autologin.conf
 scripts/test-cyberhive-firstboot-tty1-autologin.py
+scripts/test-cyberhive-live-identity-fallback.py
 infra/live-usb/debian-live/config/includes.chroot/etc/cyberhive/bootstrap/authorized_keys
 infra/live-usb/debian-live/config/includes.chroot/etc/cyberhive/ota/allowed_signers
 .github/workflows/live-appliance-v0-3.yml'
@@ -54,6 +56,7 @@ for f in \
 done
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-web").read_text())'
 python3 scripts/test-cyberhive-firstboot-tty1-autologin.py
+python3 scripts/test-cyberhive-live-identity-fallback.py
 
 line_of() {
   file=$1
