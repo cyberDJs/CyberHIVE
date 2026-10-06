@@ -189,6 +189,10 @@ def execute_action(
     if firewall.returncode != 0:
         return _blocked("management-firewall-inactive")
 
+    firewall_attestation = _run(runner, ["cyberhive-management-firewall-attest"])
+    if firewall_attestation.returncode != 0:
+        return _blocked("management-firewall-unattested")
+
     if action == "restart-web":
         return _command_result(
             action, _run(runner, ["systemctl", "restart", "cyberhive-web.service"])

@@ -14,9 +14,14 @@ on:
       - 'scripts/test-cyberhive-guardian-wiring.py'
       - 'scripts/test-cyberhive-guardian-state-cycle.py'
       - 'scripts/test-cyberhive-guardian-gate.py'
+      - 'scripts/test-cyberhive-firewall-attest.py'
+      - 'scripts/test-cyberhive-firewall-health-contract.py'
+      - 'scripts/test-cyberhive-firewall-attest-privilege.py'
+      - 'scripts/test-cyberhive-firewall-attest-gate.py'
       - 'docs/work-blocks/WB-HIVE-BOOT-0006-unattended-ota-v0-3.md'
       - 'docs/work-blocks/WB-HIVE-BOOT-0009-v0-3-1-health-contract.md'
       - 'docs/work-blocks/WB-HIVE-BOOT-0010-guardian-l0-l1.md'
+      - 'docs/work-blocks/WB-HIVE-BOOT-0011-firewall-attestation.md'
       - 'docs/adr/ADR-0026-cyberhive-unattended-single-usb-ab-ota.md'
       - 'docs/runbooks/live-appliance-v0-3.md'
       - 'docs/security/live-appliance-v0-3-safety.md'
@@ -35,6 +40,10 @@ on:
       - 'scripts/test-cyberhive-guardian-wiring.py'
       - 'scripts/test-cyberhive-guardian-state-cycle.py'
       - 'scripts/test-cyberhive-guardian-gate.py'
+      - 'scripts/test-cyberhive-firewall-attest.py'
+      - 'scripts/test-cyberhive-firewall-health-contract.py'
+      - 'scripts/test-cyberhive-firewall-attest-privilege.py'
+      - 'scripts/test-cyberhive-firewall-attest-gate.py'
       - '.github/workflows/live-appliance-v0-3.yml'
 
 permissions:
@@ -60,3 +69,7 @@ jobs:
           python3 scripts/test-cyberhive-guardian-wiring.py
           python3 scripts/test-cyberhive-guardian-state-cycle.py
           python3 scripts/test-cyberhive-guardian-gate.py
+          python3 scripts/test-cyberhive-firewall-attest.py
+          python3 scripts/test-cyberhive-firewall-health-contract.py
+          python3 scripts/test-cyberhive-firewall-attest-privilege.py
+          python3 scripts/test-cyberhive-firewall-attest-gate.py
