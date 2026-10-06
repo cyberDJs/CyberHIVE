@@ -180,12 +180,24 @@ def main() -> int:
     v6, v6_error = _read_rules("ip6tables")
 
     if v4_error or v6_error:
-        reasons = [reason for reason in (v4_error, v6_error) if reason]
+        ipv4 = "unknown" if v4_error else ("pass" if _prefix_matches(v4 or [], EXPECTED_V4) else "fail")
+        ipv6 = "unknown" if v6_error else ("pass" if _prefix_matches(v6 or [], EXPECTED_V6) else "fail")
+
+        reasons: list[str] = []
+        if v4_error:
+            reasons.append(v4_error)
+        elif ipv4 != "pass":
+            reasons.append("ipv4-prefix-mismatch")
+        if v6_error:
+            reasons.append(v6_error)
+        elif ipv6 != "pass":
+            reasons.append("ipv6-prefix-mismatch")
+
         result = {
             "schema": SCHEMA,
             "status": "fail",
-            "ipv4": "unknown" if v4_error else "pass",
-            "ipv6": "unknown" if v6_error else "pass",
+            "ipv4": ipv4,
+            "ipv6": ipv6,
             "reasons": reasons,
         }
         json.dump(result, sys.stdout, sort_keys=True, separators=(",", ":"))

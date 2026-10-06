@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 import importlib.util
+import io
+import json
 import sys
+from contextlib import redirect_stdout
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
@@ -68,5 +71,44 @@ v4_explicit_all = V4.replace(
 )
 normalized = mod.attest_rule_lines(v4_explicit_all.splitlines(), V6.splitlines())
 assert normalized["status"] == "pass", normalized
+
+
+def run_partial_query(v4_result, v6_result):
+    original = mod._read_rules
+
+    def fake_read_rules(binary):
+        return v4_result if binary == "iptables" else v6_result
+
+    mod._read_rules = fake_read_rules
+    output = io.StringIO()
+    try:
+        with redirect_stdout(output):
+            rc = mod.main()
+    finally:
+        mod._read_rules = original
+    return rc, json.loads(output.getvalue())
+
+
+bad_v4 = ["-A INPUT -j ACCEPT", *V4.splitlines()]
+rc, partial_v4 = run_partial_query(
+    (bad_v4, None),
+    (None, "ip6tables-query-failed"),
+)
+assert rc == 2, partial_v4
+assert partial_v4["status"] == "fail", partial_v4
+assert partial_v4["ipv4"] == "fail", partial_v4
+assert partial_v4["ipv6"] == "unknown", partial_v4
+assert partial_v4["reasons"] == ["ipv4-prefix-mismatch", "ip6tables-query-failed"], partial_v4
+
+bad_v6 = ["-A INPUT -j ACCEPT", *V6.splitlines()]
+rc, partial_v6 = run_partial_query(
+    (None, "iptables-query-failed"),
+    (bad_v6, None),
+)
+assert rc == 2, partial_v6
+assert partial_v6["status"] == "fail", partial_v6
+assert partial_v6["ipv4"] == "unknown", partial_v6
+assert partial_v6["ipv6"] == "fail", partial_v6
+assert partial_v6["reasons"] == ["iptables-query-failed", "ipv6-prefix-mismatch"], partial_v6
 
 print("CyberHIVE management firewall semantic prefix attestation passed")
