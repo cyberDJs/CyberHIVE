@@ -44,5 +44,6 @@ grep -F -- '--dport 80 -j DROP' "$root/usr/local/sbin/cyberhive-management-firew
 grep -F 'PasswordAuthentication no' "$root/usr/local/sbin/cyberhive-onboarding-init" >/dev/null
 
 python3 scripts/test-cyberhive-oob-onboarding.py
+python3 scripts/test-cyberhive-oob-provisioner.py
 
 echo 'CyberHIVE headless OOB onboarding validation passed'
