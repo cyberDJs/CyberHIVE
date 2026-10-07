@@ -96,3 +96,36 @@ sudo cat /var/lib/cyberhive-persist/state/guardian/state.json
 ~~~
 
 Malformed Guardian state, persistence failure, onboarding failure, host-disk-guard failure or firewall failure is fail-closed and requires operator intervention or a later recovery work block.
+
+## v0.3.1 management firewall attestation
+
+WB-HIVE-BOOT-0011 adds a read-only effective-policy check:
+
+~~~
+sudo cyberhive-management-firewall-attest
+~~~
+
+PASS means the governed CyberHIVE IPv4 and IPv6 management rules occupy the beginning of each INPUT chain in the expected semantic order.
+
+A systemd state of active for cyberhive-management-firewall.service is not sufficient by itself.
+
+Health behavior:
+
+- attestation PASS contributes management_firewall=pass,
+- attestation failure makes LOCAL_SAFE fail,
+- OTA candidate acceptance therefore fails closed,
+- REMOTE_READY remains a separate Tailscale concern.
+
+Guardian behavior:
+
+- every L0/L1 repair requires the firewall service to be active and attestation to pass,
+- attestation failure produces management-firewall-unattested,
+- Guardian does not automatically rewrite firewall rules.
+
+For diagnosis:
+
+~~~
+sudo cyberhive-management-firewall-attest | jq .
+sudo iptables -S INPUT
+sudo ip6tables -S INPUT
+~~~

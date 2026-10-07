@@ -25,6 +25,7 @@ Run: cyberhive-update --manifest URL [--reboot]
 MOTD
 
 chmod 0440 /etc/sudoers.d/90-cyberhive-firstboot
+chmod 0440 /etc/sudoers.d/91-cyberhive-firewall-attest
 systemctl enable cyberhive-persist-init.service
 systemctl enable cyberhive-management-firewall.service
 systemctl enable tailscaled.service

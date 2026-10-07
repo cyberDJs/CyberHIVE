@@ -14,6 +14,7 @@ def classify(**overrides):
         "web_service": "active",
         "mdns_service": "active",
         "host_disk_guard": "pass",
+        "management_firewall": "pass",
         "persistence": "usb-state",
         "persistence_state": "mounted:/dev/sdb4:/dev/sdb:A",
         "lan_ip": "10.0.1.30",
@@ -73,12 +74,17 @@ guard_fail = classify(host_disk_guard="fail")
 assert guard_fail["local_safe"] == "fail", guard_fail
 assert guard_fail["reasons"]["local_safe"] == ["host-disk-guard"], guard_fail
 
+firewall_fail = classify(management_firewall="fail")
+assert firewall_fail["local_safe"] == "fail", firewall_fail
+assert firewall_fail["reasons"]["local_safe"] == ["management-firewall"], firewall_fail
+
 multiple = classify(
     onboarding_service="failed",
     ssh_service="inactive",
     web_service="failed",
     mdns_service="inactive",
     host_disk_guard="fail",
+    management_firewall="fail",
     persistence_state="unavailable",
 )
 assert multiple["reasons"]["local_safe"] == [
@@ -87,6 +93,7 @@ assert multiple["reasons"]["local_safe"] == [
     "web-inactive",
     "mdns-inactive",
     "host-disk-guard",
+    "management-firewall",
     "persistence-unavailable",
 ], multiple
 

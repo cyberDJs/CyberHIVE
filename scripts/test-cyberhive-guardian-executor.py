@@ -16,8 +16,9 @@ spec.loader.exec_module(mod)
 
 
 class FakeRunner:
-    def __init__(self, *, firewall_ok=True, sshd_ok=True, nm_active=True, devices="eth0:ethernet:disconnected\nwlan0:wifi:disconnected\n"):
+    def __init__(self, *, firewall_ok=True, attest_ok=True, sshd_ok=True, nm_active=True, devices="eth0:ethernet:disconnected\nwlan0:wifi:disconnected\n"):
         self.firewall_ok = firewall_ok
+        self.attest_ok = attest_ok
         self.sshd_ok = sshd_ok
         self.nm_active = nm_active
         self.devices = devices
@@ -29,6 +30,8 @@ class FakeRunner:
         stdout = ""
         if argv[:3] == ["systemctl", "is-active", "--quiet"] and argv[3] == "cyberhive-management-firewall.service":
             rc = 0 if self.firewall_ok else 3
+        elif argv == ["cyberhive-management-firewall-attest"]:
+            rc = 0 if self.attest_ok else 1
         elif argv == ["/usr/sbin/sshd", "-t"]:
             rc = 0 if self.sshd_ok else 1
         elif argv[:3] == ["systemctl", "is-active", "--quiet"] and argv[3] == "NetworkManager.service":
@@ -47,6 +50,7 @@ result = mod.execute_action("restart-web", fake)
 assert result["status"] == "executed", result
 assert ran(fake, "cyberhive-host-disk-guard"), fake.calls
 assert ran(fake, "systemctl", "is-active", "--quiet", "cyberhive-management-firewall.service"), fake.calls
+assert ran(fake, "cyberhive-management-firewall-attest"), fake.calls
 assert ran(fake, "systemctl", "restart", "cyberhive-web.service"), fake.calls
 
 fake = FakeRunner()
@@ -72,6 +76,19 @@ for action, forbidden in (
     result = mod.execute_action(action, fake)
     assert result["status"] == "blocked", (action, result)
     assert result["reason"] == "management-firewall-inactive", (action, result)
+    assert tuple(forbidden) not in fake.calls, (action, fake.calls)
+
+for action, forbidden in (
+    ("restart-web", ("systemctl", "restart", "cyberhive-web.service")),
+    ("restart-ssh", ("systemctl", "restart", "ssh.service")),
+    ("restart-mdns", ("systemctl", "restart", "avahi-daemon.service")),
+    ("restart-tailscaled", ("systemctl", "restart", "tailscaled.service")),
+    ("reconnect-network", ("nmcli", "connection", "reload")),
+):
+    fake = FakeRunner(attest_ok=False)
+    result = mod.execute_action(action, fake)
+    assert result["status"] == "blocked", (action, result)
+    assert result["reason"] == "management-firewall-unattested", (action, result)
     assert tuple(forbidden) not in fake.calls, (action, fake.calls)
 
 fake = FakeRunner()

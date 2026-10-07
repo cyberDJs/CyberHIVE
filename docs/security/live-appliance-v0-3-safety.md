@@ -79,3 +79,19 @@ Before every automatic repair, Guardian reruns cyberhive-host-disk-guard. It als
 Guardian may only perform its explicit L0/L1 action allowlist. It must not reboot, power off, edit GRUB/EFI state, write A/B runtime slots, format/repartition media, enable LAN SSH, disable the management firewall, or change pairing/authentication policy.
 
 Malformed Guardian persistent state is fail-closed and is not silently replaced, because silently resetting retry counters could bypass the circuit breaker.
+
+## v0.3.1 effective firewall attestation
+
+Management firewall security is now attested from the effective INPUT rule ordering rather than inferred solely from systemd oneshot state.
+
+The attestor is read-only. It does not add, delete, reorder or flush rules.
+
+The normal `cyberhive` operator account receives NOPASSWD permission only for the fixed attestor executable. The attestor rejects arguments and uses `/usr/bin/python3`; sudoers does not expose `iptables`, `ip6tables` or the mutating `cyberhive-management-firewall` command.
+
+LOCAL_SAFE requires both host-disk guard and management-firewall attestation to pass.
+
+Guardian additionally requires the management firewall service to remain active and the effective attestation to pass immediately before every automatic L0/L1 repair.
+
+A broad ACCEPT rule inserted above the governed CyberHIVE prefix causes attestation failure even if all individual CyberHIVE ACCEPT/DROP rules still exist lower in the chain.
+
+Firewall drift is fail-closed and operator-visible. WB-HIVE-BOOT-0011 does not implement automatic firewall repair.
