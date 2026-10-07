@@ -53,3 +53,79 @@ The governed image build records disk usage before and after deleting disposable
 ## Recovery boundary
 
 If firmware, the kernel, or hardware hangs before userspace and no working hardware watchdog resets the machine, physical intervention can still be required. A second immutable rescue USB remains recommended when available, but v0.3 is designed so normal runtime updates do not require one.
+
+## v0.3.1 offline-safe health contract
+
+WB-HIVE-BOOT-0009 splits runtime health into three deterministic classes:
+
+- LOCAL_SAFE: local boot/storage/security/control-plane contract,
+- CONNECTED: non-Tailscale local network availability,
+- REMOTE_READY: Tailscale remote-management readiness.
+
+OTA candidate acceptance is based on LOCAL_SAFE. Internet, DNS, Tailscale backend state and Tailscale IP are not candidate acceptance requirements.
+
+The top-level health schema remains cyberhive.live.health.v1 for compatibility. The new health object carries local_safe, connected, remote_ready and deterministic reason lists. Top-level status is ok exactly when LOCAL_SAFE passes.
+
+This work block does not add Guardian repair actions. CONNECTED or REMOTE_READY failure is reported only; automated reconnection/restart policy is a later work block.
+
+## v0.3.1 bounded Guardian L0/L1 repair
+
+WB-HIVE-BOOT-0010 adds a one-shot Guardian evaluated once per minute by cyberhive-guardian.timer.
+
+The Guardian performs at most one allowlisted repair per run and persists retry/circuit state under state/guardian on the validated CyberHIVE STATE partition.
+
+Repair budget per action:
+
+- 3 attempts within 10 minutes,
+- at least 60 seconds between attempts,
+- 15 minute circuit-open interval after exhaustion.
+
+Automatic actions are limited to restarting web/SSH/mDNS/tailscaled and asking NetworkManager to reconnect existing profiles.
+
+Every repair rechecks the host-disk guard and requires the management firewall service to be active. SSH restart additionally requires sshd -t to pass.
+
+The Guardian does not reboot, modify GRUB/EFI/A-B slots, create network credentials, run tailscale up or weaken management authentication.
+
+Operational inspection:
+
+~~~
+systemctl status cyberhive-guardian.timer
+systemctl status cyberhive-guardian.service
+cat /run/cyberhive/evidence/guardian.json
+sudo cat /var/lib/cyberhive-persist/state/guardian/state.json
+~~~
+
+Malformed Guardian state, persistence failure, onboarding failure, host-disk-guard failure or firewall failure is fail-closed and requires operator intervention or a later recovery work block.
+
+## v0.3.1 management firewall attestation
+
+WB-HIVE-BOOT-0011 adds a read-only effective-policy check:
+
+~~~
+sudo cyberhive-management-firewall-attest
+~~~
+
+PASS means the governed CyberHIVE IPv4 and IPv6 management rules occupy the beginning of each INPUT chain in the expected semantic order.
+
+A systemd state of active for cyberhive-management-firewall.service is not sufficient by itself.
+
+Health behavior:
+
+- attestation PASS contributes management_firewall=pass,
+- attestation failure makes LOCAL_SAFE fail,
+- OTA candidate acceptance therefore fails closed,
+- REMOTE_READY remains a separate Tailscale concern.
+
+Guardian behavior:
+
+- every L0/L1 repair requires the firewall service to be active and attestation to pass,
+- attestation failure produces management-firewall-unattested,
+- Guardian does not automatically rewrite firewall rules.
+
+For diagnosis:
+
+~~~
+sudo cyberhive-management-firewall-attest | jq .
+sudo iptables -S INPUT
+sudo ip6tables -S INPUT
+~~~
