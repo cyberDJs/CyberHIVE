@@ -16,6 +16,7 @@ MAX_ATTEMPTS = 3
 WINDOW_SECONDS = 600
 MIN_INTERVAL_SECONDS = 60
 CIRCUIT_SECONDS = 900
+STATE_ACTION_INT_FIELDS = ("window_start", "attempts", "last_attempt", "circuit_until")
 
 LOCAL_BLOCKERS = ("host-disk-guard", "persistence-unavailable", "onboarding-inactive")
 LOCAL_ACTIONS = (
@@ -29,11 +30,31 @@ def _fresh_state() -> dict[str, Any]:
     return {"schema": SCHEMA, "actions": {}}
 
 
+def _state_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _state_action_entry_valid(entry: Any) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    for key in STATE_ACTION_INT_FIELDS:
+        value = entry.get(key, 0)
+        if not _state_int(value):
+            return False
+    return True
+
+
+def _state_actions_valid(actions: Any) -> bool:
+    if not isinstance(actions, dict):
+        return False
+    return all(_state_action_entry_valid(value) for value in actions.values())
+
+
 def _normalize_state(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict) or raw.get("schema") != SCHEMA:
         return _fresh_state()
     actions = raw.get("actions")
-    if not isinstance(actions, dict):
+    if not _state_actions_valid(actions):
         return _fresh_state()
     return {"schema": SCHEMA, "actions": dict(actions)}
 
@@ -282,7 +303,7 @@ def _load_state(path: Path) -> tuple[dict[str, Any], bool]:
         return _fresh_state(), False
     if not isinstance(raw, dict):
         return _fresh_state(), False
-    if raw.get("schema") != SCHEMA or not isinstance(raw.get("actions"), dict):
+    if raw.get("schema") != SCHEMA or not _state_actions_valid(raw.get("actions")):
         return _fresh_state(), False
     return _normalize_state(raw), True
 
