@@ -1,0 +1,24 @@
+[Unit]
+Description=CyberHIVE AP-only headless onboarding
+Requires=cyberhive-persist-init.service NetworkManager.service
+After=cyberhive-persist-init.service NetworkManager.service cyberhive-oob-network.service
+Wants=cyberhive-oob-network.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/cyberhive-oob-onboard
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/cyberhive /var/lib/cyberhive-persist/state/network /etc/NetworkManager/system-connections
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
