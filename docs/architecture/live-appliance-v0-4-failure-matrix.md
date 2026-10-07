@@ -40,6 +40,7 @@ Every automatic action requires a retry budget, cooldown, persistent reason code
 | B08 | Recovery payload missing/corrupt | GRUB recovery validation | fail closed and show deterministic firmware/GRUB diagnostic | physical | no host-disk boot/write fallback |
 | B09 | EFI parent cannot be proven | embedded GRUB proof | stop normal boot / diagnostic path | physical/recovery if provable | never constructs ambiguous (,gptN) slot path |
 | B10 | Duplicate/ambiguous slot identity | boot/runtime identity checks | reject ambiguous slot | L3/L4 | no arbitrary device chosen |
+| B11 | Slot reaches LOCAL_SAFE then later deadlocks, crashes or reboots uncleanly | persistent runtime/clean-shutdown marker independent of boot-success marker | next boot records post-acceptance runtime failure against the same slot and applies bounded same-slot retry before L3/L4 | L2 -> L3 -> L4 | repeated post-LOCAL_SAFE failure cannot loop forever in the same slot |
 
 ## P0 STATE and persistence failures
 
@@ -68,6 +69,14 @@ Every automatic action requires a retry budget, cooldown, persistent reason code
 | N08 | Power cut after Wi-Fi save but before remote enrollment | provisioning state | resume at remote_access=pending | none | no repeated Wi-Fi entry |
 | N09 | Power cut during provisioning state commit | atomic state transaction | previous complete state remains valid | console | no malformed complete marker |
 | N10 | Setup AP exceeds allowed lifetime | Guardian timer | disable AP unless active local provisioning session | none | AP not left indefinitely exposed |
+
+## P0 Recovery and restore safety failures
+
+| ID | Injection / condition | Detection | Expected automatic behavior | Escalation | Pass criterion |
+| --- | --- | --- | --- | --- | --- |
+| Q02 | Recovery sees internal host disks | device inventory + write allowlist | read-only inventory only; all write operations require validated CyberHIVE USB parent/partition proof | none | no write syscall targets an internal host disk |
+| Q04 | Recovery slot restore requested with signed older, replayed or quarantined bundle | signed metadata verifier + committed/quarantine sequence floor | reject by default unless an explicitly authenticated downgrade override is present | operator | signature, hash, parent proof, monotonic sequence floor and failed-release quarantine floor all pass before slot write |
+| Q06 | setup AP in Recovery | recovery network + pairing state | ephemeral AP credential + local pairing/setup token required; no ordinary LAN SSH | none | recovery AP cannot authorize mutation by association alone |
 
 ## P1 remote-management failures
 
@@ -116,21 +125,18 @@ Every automatic action requires a retry budget, cooldown, persistent reason code
 | --- | --- | --- | --- | --- | --- |
 | H01 | hardware watchdog available | capability probe | Guardian/systemd feeds watchdog only while alive | hardware reset | tested timeout reset |
 | H02 | no hardware watchdog | capability probe | record unsupported; no false self-heal claim | none | status accurately reports limitation |
-| H03 | userspace deadlock | watchdog timeout | hardware reset when supported | reboot -> boot accounting | next boot sees unfinished attempt |
+| H03 | userspace deadlock | watchdog timeout plus persistent runtime/clean-shutdown marker on next boot | hardware reset when supported; next boot records unfinished runtime and applies bounded slot accounting | reboot -> boot accounting | repeated post-LOCAL_SAFE deadlock escalates instead of re-entering the same slot forever |
 | H04 | USB transient I/O errors | kernel/journal probes | stop writes, preserve evidence if possible | L2/L3/L4 | no blind repeated writes |
 | H05 | USB physically removed | device disappearance | fail closed; no host-disk substitution | physical | no writes redirected elsewhere |
 | H06 | physical USB failure | device I/O failure | cannot self-heal from same medium | physical | explicit limitation reported |
 
-## P1 Recovery failures and safety
+## P1 Recovery diagnostics and operator actions
 
 | ID | Injection / condition | Detection | Expected automatic behavior | Escalation | Pass criterion |
 | --- | --- | --- | --- | --- | --- |
 | Q01 | Recovery boots with STATE absent | recovery init | start local diagnostics/setup without STATE dependency | none | Recovery usable |
-| Q02 | Recovery sees internal host disks | device inventory | read-only inventory only | none | no writes |
 | Q03 | Recovery filesystem check requested | physical authenticated action | operate only on validated USB STATE while unmounted | operator | exact target proof |
-| Q04 | Recovery slot restore requested | signed bundle verifier | restore only selected CyberHIVE A/B partition | operator | signature/hash/parent checks |
 | Q05 | unsigned recovery payload | verifier | reject | none | no bypass |
-| Q06 | setup AP in Recovery | recovery network | ephemeral auth + local pairing | none | no ordinary LAN SSH |
 
 ## Evidence requirements
 
@@ -140,6 +146,7 @@ Each automated failure test must capture, when applicable:
 - image manifest + SHA-256,
 - boot slot and release ID,
 - boot-attempt/failure counters,
+- runtime/clean-shutdown marker state,
 - STATE schema/version,
 - Guardian reason code and repair level,
 - systemd state,
@@ -147,7 +154,8 @@ Each automated failure test must capture, when applicable:
 - host-disk guard result,
 - GRUB environment before/after,
 - whether reboot/failover/Recovery occurred,
-- explicit negative claims for host-disk writes and auth weakening.
+- explicit negative claims for host-disk writes and auth weakening,
+- release sequence/quarantine floor decision for restore or OTA writes.
 
 Secrets must be redacted.
 
@@ -163,7 +171,9 @@ Required for:
 - health classification,
 - GRUB decision interpreter,
 - migration transactions,
-- updater allowlists.
+- updater allowlists,
+- runtime/clean-shutdown marker transitions,
+- Recovery restore sequence/quarantine floor checks.
 
 ### Tier 2 - VM fault injection
 
@@ -171,6 +181,7 @@ Required for:
 
 - process crashes,
 - network loss,
+- post-LOCAL_SAFE deadlock/unclean reboot,
 - power-cut simulation around file transactions,
 - slot failure,
 - dual-slot failure,
@@ -197,6 +208,8 @@ v0.4 is not eligible for physical promotion until every P0 row has:
 - a passing result,
 - no unbounded retry,
 - a rollback/recovery path.
+
+The P0 gate explicitly includes Recovery host-disk write protection, Recovery setup-AP authorization, Recovery restore anti-downgrade/quarantine enforcement and post-LOCAL_SAFE runtime failure accounting. These checks cannot be deferred to a lower priority tier for any image that claims v0.4 promotion readiness.
 
 ## Stop line
 
