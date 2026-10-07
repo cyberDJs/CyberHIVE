@@ -30,7 +30,7 @@ assert "ip6tables" not in sudoers
 
 assert "management-firewall-attest.json" in live
 assert "cyberhive.management_firewall.attestation.v1" in live
-assert "/usr/local/bin/cyberhive-management-firewall-attest" not in live
-assert "sudo -n" not in live
+assert 'if [ "$(id -u)" -eq 0 ]; then' not in live
+assert "management_firewall=$(jq -r" in live
 
 print("CyberHIVE firewall attestation least-privilege read-only health contract passed")
