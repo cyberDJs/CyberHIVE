@@ -10,11 +10,16 @@ live = LIVE.read_text()
 classifier = CLASSIFIER.read_text()
 guardian = GUARDIAN.read_text()
 
-assert "/usr/local/bin/cyberhive-management-firewall-attest" in live
+assert "management-firewall-attest.json" in live
+assert "cyberhive.management_firewall.attestation.v1" in live
+assert "/usr/local/bin/cyberhive-management-firewall-attest" not in live
+assert "sudo -n" not in live
 assert "management_firewall" in live
 assert '"management_firewall"' in classifier
 assert '"management-firewall"' in classifier
-assert "cyberhive-management-firewall-attest" in guardian
+assert "refresh_management_firewall_attestation" in guardian
+assert "MANAGEMENT_FIREWALL_EVIDENCE_SCHEMA" in guardian
+assert "/usr/local/bin/cyberhive-management-firewall-attest" in guardian
 assert "management-firewall-unattested" in guardian
 
-print("CyberHIVE firewall attestation health/Guardian integration contract passed")
+print("CyberHIVE firewall attestation privileged-state health/Guardian contract passed")
