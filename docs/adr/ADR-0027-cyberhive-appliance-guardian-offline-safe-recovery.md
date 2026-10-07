@@ -234,15 +234,17 @@ EFI boot state SHALL track enough information to detect a boot that never reache
 
 Before entering a normal slot, GRUB marks the boot attempt in progress.
 
-After LOCAL_SAFE, userspace records boot success and resets the corresponding failure budget.
+After LOCAL_SAFE, userspace records boot success for boot/OTA acceptance, but that record MUST NOT be the only signal used to judge later slot health. v0.4 SHALL also maintain an independently detectable runtime marker, clean-shutdown marker or equivalent persistent signal that survives watchdog reset, kernel panic, deadlock or unclean reboot after LOCAL_SAFE.
 
-If the next firmware boot observes an unfinished previous boot attempt, that slot accrues a boot failure.
+A normal shutdown clears the runtime marker or records a clean stop. A watchdog reset, power loss, panic or repeated userspace crash after LOCAL_SAFE leaves an unfinished runtime attempt that the next boot can attribute to the same slot.
+
+If the next firmware boot observes an unfinished previous boot attempt before LOCAL_SAFE, that slot accrues a boot failure. If userspace observes an unfinished post-LOCAL_SAFE runtime marker from the previous boot, that slot accrues a post-acceptance runtime failure and the same bounded L2 -> L3 -> L4 escalation policy applies.
 
 After the configured failure threshold, GRUB selects the other eligible accepted slot.
 
 If neither normal slot is eligible, GRUB selects Recovery.
 
-Implementation must minimize EFI writes and prove crash consistency. This ADR does not freeze exact grubenv field encoding.
+Implementation must minimize EFI writes and prove crash consistency. This ADR does not freeze exact grubenv field encoding or the exact runtime-marker storage format.
 
 ### 8. Unify OTA candidate and normal boot accounting
 
@@ -289,6 +291,8 @@ Recovery capabilities:
 - permit deliberate re-provisioning.
 
 Recovery MUST NOT automatically format STATE, erase runtime slots, write host internal disks, accept unsigned repair payloads or expose unauthenticated remote administration.
+
+Recovery slot restore MUST enforce the signed release metadata sequence floor and the failed-release quarantine floor retained from v0.3. A correctly signed but older, replayed or quarantined bundle is rejected by default unless a separately authenticated explicit downgrade override is later designed and approved.
 
 Ordinary OTA MUST NOT replace Recovery or the bootloader. Updating Recovery is a separately governed maintenance operation.
 
@@ -369,6 +373,7 @@ Self-healing may restore a failed security control only to its declared secure c
 - provisioning survives power loss,
 - process/network failures gain bounded automatic repair,
 - committed-slot corruption can fail over to the other accepted slot,
+- post-LOCAL_SAFE runtime crashes can be detected and escalated instead of looping forever,
 - dual-slot failure has a deterministic Recovery destination,
 - operators gain a single local status/recovery surface,
 - appliance remains useful offline,
@@ -426,12 +431,14 @@ Minimum P0 validation:
 4. Tailscale outage does not invalidate LOCAL_SAFE,
 5. web and tailscaled process failures heal within retry budget,
 6. current-slot repeated boot failure selects alternate slot,
-7. both normal slots failing selects Recovery,
-8. STATE read-only/corrupt condition reaches Recovery without auto-format,
-9. power interruption at each OTA transaction boundary has deterministic outcome,
-10. host-disk guard failure never triggers a repair that weakens the guard,
-11. setup AP requires ephemeral local authorization,
-12. Recovery cannot write host internal disks.
+7. post-LOCAL_SAFE crash, deadlock or unclean reboot is recorded by an independent runtime/clean-shutdown marker and cannot loop forever in the same slot,
+8. both normal slots failing selects Recovery,
+9. STATE read-only/corrupt condition reaches Recovery without auto-format,
+10. power interruption at each OTA transaction boundary has deterministic outcome,
+11. host-disk guard failure never triggers a repair that weakens the guard,
+12. setup AP requires ephemeral local authorization,
+13. Recovery cannot write host internal disks,
+14. Recovery restore rejects older, replayed or quarantined bundles unless a separately authenticated downgrade override is explicitly approved.
 
 ## Migration / rollback
 
