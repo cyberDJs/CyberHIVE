@@ -132,4 +132,42 @@ with tempfile.TemporaryDirectory() as tmp:
     assert state.read_text(encoding="utf-8") == "{broken-json"
     assert fake.calls == [], fake.calls
 
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    state = root / "persist/state/guardian/state.json"
+    evidence = root / "run/evidence/guardian.json"
+    state.parent.mkdir(parents=True)
+    type_corrupt_state = {
+        "schema": mod.SCHEMA,
+        "actions": {
+            "restart-web": {
+                "window_start": 1000,
+                "attempts": "not-an-int",
+                "last_attempt": 1000,
+                "circuit_until": 0,
+            }
+        },
+    }
+    original = json.dumps(type_corrupt_state, sort_keys=True, separators=(",", ":")) + "\n"
+    state.write_text(original, encoding="utf-8")
+    fake = FakeRunner()
+
+    invalid = mod.run_cycle(
+        web_down(),
+        state_path=state,
+        evidence_path=evidence,
+        persisted=True,
+        now=4000,
+        runner=fake,
+    )
+    assert invalid["plan"]["action"] is None, invalid
+    assert invalid["plan"]["reason"] == "guardian-state-invalid", invalid
+    assert invalid["result"] == {
+        "status": "blocked",
+        "reason": "guardian-state-invalid",
+    }, invalid
+    assert state.read_text(encoding="utf-8") == original
+    assert evidence.is_file(), evidence
+    assert fake.calls == [], fake.calls
+
 print("CyberHIVE Guardian persistent retry/evidence cycle passed")
