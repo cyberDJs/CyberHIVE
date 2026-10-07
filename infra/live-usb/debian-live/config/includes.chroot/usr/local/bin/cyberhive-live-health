@@ -12,12 +12,14 @@ session_id=$(cat "$CYBERHIVE_STATE_DIR/session-id" 2>/dev/null || printf '%s' un
 fingerprint=$(cat "$CYBERHIVE_STATE_DIR/ssh-host-fingerprint" 2>/dev/null || printf '%s' unknown)
 role=$(cat "$CYBERHIVE_CONTROL_DIR/role" 2>/dev/null || printf '%s' "$CYBERHIVE_DEFAULT_ROLE")
 guard=$(jq -r '.status // "pending"' "$CYBERHIVE_EVIDENCE_DIR/host-disk-guard.json" 2>/dev/null || printf '%s' pending)
-management_firewall='fail'
-if [ "$(id -u)" -eq 0 ]; then
-  if /usr/local/bin/cyberhive-management-firewall-attest >/dev/null 2>&1; then management_firewall='pass'; fi
-else
-  if sudo -n /usr/local/bin/cyberhive-management-firewall-attest >/dev/null 2>&1; then management_firewall='pass'; fi
-fi
+management_firewall_now=$(date +%s)
+management_firewall=$(jq -r --argjson now "$management_firewall_now" '
+  if .schema == "cyberhive.management_firewall.attestation.v1"
+     and .status == "pass"
+     and (.timestamp | type == "number")
+     and .timestamp >= ($now - 300)
+  then "pass" else "fail" end
+' "$CYBERHIVE_EVIDENCE_DIR/management-firewall-attest.json" 2>/dev/null || printf '%s' fail)
 persist_state=$(cat "$CYBERHIVE_STATE_DIR/persistence-state" 2>/dev/null || printf '%s' unknown)
 root_source=$(findmnt -nr -o SOURCE / 2>/dev/null || printf '%s' unknown)
 root_fstype=$(findmnt -nr -o FSTYPE / 2>/dev/null || printf '%s' unknown)
