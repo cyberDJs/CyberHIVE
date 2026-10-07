@@ -3,6 +3,8 @@ set -eu
 
 root='infra/live-usb/debian-live/config/includes.chroot'
 required='docs/work-blocks/WB-HIVE-BOOT-0006-unattended-ota-v0-3.md
+docs/work-blocks/WB-HIVE-BOOT-0010-guardian-l0-l1.md
+docs/work-blocks/WB-HIVE-BOOT-0011-firewall-attestation.md
 docs/adr/ADR-0026-cyberhive-unattended-single-usb-ab-ota.md
 docs/runbooks/live-appliance-v0-3.md
 docs/security/live-appliance-v0-3-safety.md
@@ -10,6 +12,7 @@ infra/live-usb/debian-live/build-unattended-disk-image.sh
 infra/live-usb/debian-live/config/hooks/live/002-cyberhive-unattended-v03.hook.chroot
 infra/live-usb/debian-live/config/includes.chroot/usr/local/lib/cyberhive-device.sh
 infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-host-disk-guard
+infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-management-firewall-attest
 infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-health-classify
 infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-live-health
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-persist-init
@@ -18,15 +21,19 @@ infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-manag
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-update
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-update-check
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-boot-commit
+infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-guardian
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-persist-init.service
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/NetworkManager.service.d/10-cyberhive-persist.conf
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/tailscaled.service.d/10-cyberhive-persist.conf
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-management-firewall.service
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/ssh.service.d/20-cyberhive-management-firewall.conf
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-boot-commit.service
+infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-guardian.service
+infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-guardian.timer
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-update-check.service
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-update-check.timer
 infra/live-usb/debian-live/config/includes.chroot/etc/profile.d/20-cyberhive-firstboot.sh
+infra/live-usb/debian-live/config/includes.chroot/etc/sudoers.d/91-cyberhive-firewall-attest
 infra/live-usb/debian-live/config/includes.chroot/etc/cyberhive/bootstrap/authorized_keys
 infra/live-usb/debian-live/config/includes.chroot/etc/cyberhive/ota/allowed_signers
 .github/workflows/live-appliance-v0-3.yml'
@@ -53,7 +60,11 @@ for f in \
 done
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-web").read_text())'
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-health-classify").read_text())'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-management-firewall-attest").read_text())'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-guardian").read_text())'
 test -x "$root/usr/local/bin/cyberhive-health-classify"
+test -x "$root/usr/local/bin/cyberhive-management-firewall-attest"
+test -x "$root/usr/local/sbin/cyberhive-guardian"
 
 line_of() {
   file=$1
@@ -150,11 +161,26 @@ if grep -n -E '(^|[[:space:]])(dd|mkfs|wipefs|parted|sgdisk)([[:space:]]|$)' "$u
 
 health="$root/usr/local/bin/cyberhive-live-health"
 classifier="$root/usr/local/bin/cyberhive-health-classify"
+firewall_attestor="$root/usr/local/bin/cyberhive-management-firewall-attest"
+grep -F 'cyberhive.management.firewall.attestation.v1' "$firewall_attestor" >/dev/null
+grep -F 'ipv4-prefix-mismatch' "$firewall_attestor" >/dev/null
+grep -F 'ipv6-prefix-mismatch' "$firewall_attestor" >/dev/null
 grep -F 'cyberhive.health.classes.v1' "$classifier" >/dev/null
 grep -F '"local_safe"' "$classifier" >/dev/null
 grep -F '"connected"' "$classifier" >/dev/null
 grep -F '"remote_ready"' "$classifier" >/dev/null
+grep -F '"management_firewall"' "$classifier" >/dev/null
+grep -F '"management-firewall"' "$classifier" >/dev/null
+grep -F '/usr/local/bin/cyberhive-management-firewall-attest' "$health" >/dev/null
+grep -F 'management_firewall' "$health" >/dev/null
+grep -F 'sudo -n /usr/local/bin/cyberhive-management-firewall-attest' "$health" >/dev/null
 grep -F '/usr/local/bin/cyberhive-health-classify' "$health" >/dev/null
+firewall_attest_sudoers="$root/etc/sudoers.d/91-cyberhive-firewall-attest"
+grep -Fx 'cyberhive ALL=(root) NOPASSWD: /usr/local/bin/cyberhive-management-firewall-attest' "$firewall_attest_sudoers" >/dev/null
+if grep -E '(iptables|ip6tables|cyberhive-management-firewall[[:space:]])' "$firewall_attest_sudoers"; then
+  echo 'firewall attestation sudoers must expose only the read-only attestor' >&2
+  exit 1
+fi
 grep -F -- '--argjson health "$health"' "$health" >/dev/null
 grep -F 'cyberhive.live.health.v1' "$health" >/dev/null
 grep -F '[ "$local_safe" = pass ] && status='"'"'ok'"'"'' "$health" >/dev/null
@@ -216,6 +242,30 @@ assert '.health.local_safe == "pass"' in gate
 assert 'tailscale status' not in gate
 assert 'systemctl is-active --quiet tailscaled.service' not in gate
 PY_HEALTH_GATE
+
+guardian="$root/usr/local/sbin/cyberhive-guardian"
+guardian_service="$root/etc/systemd/system/cyberhive-guardian.service"
+guardian_timer="$root/etc/systemd/system/cyberhive-guardian.timer"
+grep -F 'MAX_ATTEMPTS = 3' "$guardian" >/dev/null
+grep -F 'WINDOW_SECONDS = 600' "$guardian" >/dev/null
+grep -F 'MIN_INTERVAL_SECONDS = 60' "$guardian" >/dev/null
+grep -F 'CIRCUIT_SECONDS = 900' "$guardian" >/dev/null
+grep -F 'state/guardian/state.json' "$guardian" >/dev/null
+grep -F 'cyberhive-host-disk-guard' "$guardian" >/dev/null
+grep -F 'cyberhive-management-firewall.service' "$guardian" >/dev/null
+grep -F 'cyberhive-management-firewall-attest' "$guardian" >/dev/null
+grep -F 'management-firewall-unattested' "$guardian" >/dev/null
+grep -F 'Type=oneshot' "$guardian_service" >/dev/null
+grep -F 'ExecStart=/usr/local/sbin/cyberhive-guardian' "$guardian_service" >/dev/null
+grep -F 'OnBootSec=1min' "$guardian_timer" >/dev/null
+grep -F 'OnUnitActiveSec=1min' "$guardian_timer" >/dev/null
+grep -F 'Persistent=false' "$guardian_timer" >/dev/null
+grep -F 'systemctl enable cyberhive-guardian.timer' infra/live-usb/debian-live/config/hooks/live/002-cyberhive-unattended-v03.hook.chroot >/dev/null
+grep -F '"$persist/state/guardian"' "$persist_init" >/dev/null
+if grep -n -E 'grub-editenv|systemctl[[:space:]]+(reboot|poweroff)|(^|[^[:alnum:]_])(reboot|poweroff)[[:space:]]*\(' "$guardian"; then
+  echo 'runtime Guardian must not reboot, poweroff or mutate GRUB' >&2
+  exit 1
+fi
 
 host_guard="$root/usr/local/bin/cyberhive-host-disk-guard"
 grep -F '. /usr/local/lib/cyberhive-device.sh' "$host_guard" >/dev/null

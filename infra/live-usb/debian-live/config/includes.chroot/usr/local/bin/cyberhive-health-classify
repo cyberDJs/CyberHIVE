@@ -23,6 +23,7 @@ def main() -> int:
         ("web_service", "active", "web-inactive"),
         ("mdns_service", "active", "mdns-inactive"),
         ("host_disk_guard", "pass", "host-disk-guard"),
+        ("management_firewall", "pass", "management-firewall"),
     )
     for key, expected, reason in local_checks:
         if value(key) != expected:

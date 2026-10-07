@@ -64,9 +64,10 @@ mkdir -p \
   "$persist/state/tailscale" \
   "$persist/state/ssh/host_keys" \
   "$persist/state/ota" \
+  "$persist/state/guardian" \
   "$persist/state/evidence" \
   "$persist/cache"
-chmod 0700 "$persist/state/tailscale" "$persist/state/ssh" "$persist/state/ssh/host_keys" "$persist/state/ota"
+chmod 0700 "$persist/state/tailscale" "$persist/state/ssh" "$persist/state/ssh/host_keys" "$persist/state/ota" "$persist/state/guardian"
 
 bootstrap_keys=/etc/cyberhive/bootstrap/authorized_keys
 persist_keys="$persist/state/ssh/authorized_keys"
