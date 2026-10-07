@@ -1,2 +1,1 @@
 cyberhive ALL=(root) NOPASSWD: /usr/local/bin/cyberhive-management-firewall-attest
-cyberhive-web ALL=(root) NOPASSWD: /usr/local/bin/cyberhive-management-firewall-attest
