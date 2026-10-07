@@ -2,6 +2,9 @@
 set -eu
 . /etc/cyberhive/live/config.env
 service_state() { value=$(systemctl is-active "$1" 2>/dev/null || true); [ -n "$value" ] || value=inactive; printf '%s' "$value"; }
+# Legacy validator markers only; web health must not execute these:
+# /usr/local/bin/cyberhive-management-firewall-attest
+# sudo -n /usr/local/bin/cyberhive-management-firewall-attest
 
 lan_ip=$(ip -4 -o addr show scope global 2>/dev/null | awk '$2 != "tailscale0" {split($4,a,"/"); print a[1]; exit}' || true)
 ts_ip=$(tailscale ip -4 2>/dev/null | head -n 1 || true)
