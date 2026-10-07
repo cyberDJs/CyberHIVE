@@ -16,12 +16,13 @@ spec.loader.exec_module(mod)
 
 
 class FakeRunner:
-    def __init__(self, *, firewall_ok=True, attest_ok=True, sshd_ok=True, nm_active=True, devices="eth0:ethernet:disconnected\nwlan0:wifi:disconnected\n"):
+    def __init__(self, *, firewall_ok=True, attest_ok=True, sshd_ok=True, nm_active=True, devices="eth0:ethernet:disconnected\nwlan0:wifi:disconnected\n", profiles="Wired:802-3-ethernet\nHomeWifi:802-11-wireless\n"):
         self.firewall_ok = firewall_ok
         self.attest_ok = attest_ok
         self.sshd_ok = sshd_ok
         self.nm_active = nm_active
         self.devices = devices
+        self.profiles = profiles
         self.calls = []
 
     def __call__(self, argv, **kwargs):
@@ -36,6 +37,8 @@ class FakeRunner:
             rc = 0 if self.sshd_ok else 1
         elif argv[:3] == ["systemctl", "is-active", "--quiet"] and argv[3] == "NetworkManager.service":
             rc = 0 if self.nm_active else 3
+        elif argv == ["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"]:
+            stdout = self.profiles
         elif argv == ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device", "status"]:
             stdout = self.devices
         return subprocess.CompletedProcess(argv, rc, stdout=stdout, stderr="")
@@ -108,8 +111,18 @@ assert ran(fake, "systemctl", "restart", "NetworkManager.service"), fake.calls
 assert ran(fake, "nmcli", "connection", "reload"), fake.calls
 assert ran(fake, "nmcli", "networking", "on"), fake.calls
 assert ran(fake, "nmcli", "radio", "wifi", "on"), fake.calls
-assert ran(fake, "nmcli", "--wait", "10", "device", "connect", "eth0"), fake.calls
-assert ran(fake, "nmcli", "--wait", "10", "device", "connect", "wlan0"), fake.calls
+assert ran(fake, "nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"), fake.calls
+assert ran(fake, "nmcli", "--wait", "10", "connection", "up", "Wired", "ifname", "eth0"), fake.calls
+assert ran(fake, "nmcli", "--wait", "10", "connection", "up", "HomeWifi", "ifname", "wlan0"), fake.calls
+assert not ran(fake, "nmcli", "--wait", "10", "device", "connect", "eth0"), fake.calls
+assert not ran(fake, "nmcli", "--wait", "10", "device", "connect", "wlan0"), fake.calls
+
+fake = FakeRunner(profiles="")
+result = mod.execute_action("reconnect-network", fake)
+assert result["status"] == "executed", result
+for call in fake.calls:
+    assert call[:4] != ("nmcli", "--wait", "10", "device"), fake.calls
+    assert call[:5] != ("nmcli", "--wait", "10", "connection", "up"), fake.calls
 
 fake = FakeRunner()
 result = mod.execute_action("definitely-not-allowed", fake)
