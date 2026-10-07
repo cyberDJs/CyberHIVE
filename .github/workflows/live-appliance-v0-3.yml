@@ -18,10 +18,14 @@ on:
       - 'scripts/test-cyberhive-firewall-health-contract.py'
       - 'scripts/test-cyberhive-firewall-attest-privilege.py'
       - 'scripts/test-cyberhive-firewall-attest-gate.py'
+      - 'scripts/test-cyberhive-oob-onboarding.py'
+      - 'scripts/validate-cyberhive-oob.sh'
       - 'docs/work-blocks/WB-HIVE-BOOT-0006-unattended-ota-v0-3.md'
       - 'docs/work-blocks/WB-HIVE-BOOT-0009-v0-3-1-health-contract.md'
       - 'docs/work-blocks/WB-HIVE-BOOT-0010-guardian-l0-l1.md'
       - 'docs/work-blocks/WB-HIVE-BOOT-0011-firewall-attestation.md'
+      - 'docs/work-blocks/WB-HIVE-BOOT-0013-ap-fallback-oob.md'
+      - 'docs/adr/ADR-0027-ap-fallback-headless-oob.md'
       - 'docs/adr/ADR-0026-cyberhive-unattended-single-usb-ab-ota.md'
       - 'docs/runbooks/live-appliance-v0-3.md'
       - 'docs/security/live-appliance-v0-3-safety.md'
@@ -73,3 +77,4 @@ jobs:
           python3 scripts/test-cyberhive-firewall-health-contract.py
           python3 scripts/test-cyberhive-firewall-attest-privilege.py
           python3 scripts/test-cyberhive-firewall-attest-gate.py
+          sh scripts/validate-cyberhive-oob.sh

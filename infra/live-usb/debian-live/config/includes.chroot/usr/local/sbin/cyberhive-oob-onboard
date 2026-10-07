@@ -1,0 +1,203 @@
+#!/usr/bin/python3
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import threading
+import time
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+AP_ADDR = "10.42.0.1"
+AP_PORT = 8080
+AP_NAME = "cyberhive-oob"
+CANDIDATE_PREFIX = "cyberhive-oob-candidate-"
+PERSIST_ROOT = Path(os.environ.get("CYBERHIVE_PERSIST_ROOT", "/var/lib/cyberhive-persist"))
+PERSIST_NETWORK = PERSIST_ROOT / "state/network"
+NM_CONNECTIONS = Path("/etc/NetworkManager/system-connections")
+STATE = Path("/run/cyberhive/state/oob-onboarding.json")
+TX_LOCK = threading.Lock()
+
+def run(*args: str, timeout: int = 25) -> str:
+    proc = subprocess.run(["nmcli", *args], capture_output=True, text=True, timeout=timeout, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "nmcli failed")
+    return proc.stdout
+
+def wifi_device() -> str:
+    for line in run("-t", "-f", "DEVICE,TYPE", "device", "status").splitlines():
+        dev, _, kind = line.partition(":")
+        if kind == "wifi" and dev:
+            return dev
+    raise RuntimeError("no-wifi-device")
+
+def write_state(status: str, **extra: object) -> None:
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"schema": "cyberhive.oob.onboarding.v1", "status": status, **extra}
+    tmp = STATE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, separators=(",", ":")) + "\n", encoding="utf-8")
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, STATE)
+
+def scan() -> list[dict[str, str]]:
+    dev = wifi_device()
+    out = run("-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "ifname", dev, "--rescan", "yes")
+    seen: dict[str, dict[str, str]] = {}
+    for line in out.splitlines():
+        parts = line.split(":", 2)
+        if len(parts) != 3 or not parts[0]:
+            continue
+        ssid, signal, security = parts
+        if ssid == AP_NAME:
+            continue
+        previous = seen.get(ssid)
+        if previous is None or int(signal or 0) > int(previous["signal"] or 0):
+            seen[ssid] = {"ssid": ssid, "signal": signal, "security": security}
+    return sorted(seen.values(), key=lambda item: int(item["signal"] or 0), reverse=True)
+
+def connected_l3(dev: str) -> bool:
+    out = run("-t", "-f", "GENERAL.STATE,IP4.ADDRESS,IP6.ADDRESS", "device", "show", dev)
+    state_ok = any(line.startswith("GENERAL.STATE:100") for line in out.splitlines())
+    addr_ok = any(
+        line.startswith(("IP4.ADDRESS", "IP6.ADDRESS")) and line.split(":", 1)[1].strip()
+        for line in out.splitlines()
+    )
+    return state_ok and addr_ok
+
+def find_connection_file(name: str) -> Path:
+    for path in NM_CONNECTIONS.glob("*.nmconnection"):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if f"id={name}\n" in text:
+            return path
+    raise RuntimeError("candidate-profile-not-found")
+
+def persist_profile(name: str) -> None:
+    source = find_connection_file(name)
+    PERSIST_NETWORK.mkdir(parents=True, exist_ok=True)
+    os.chmod(PERSIST_NETWORK, 0o700)
+    target = PERSIST_NETWORK / source.name
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    shutil.copy2(source, tmp)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, target)
+
+def apply_wifi(ssid: str, password: str) -> dict[str, str]:
+    if not ssid or len(ssid.encode("utf-8")) > 32:
+        return {"status": "rejected", "reason": "invalid-ssid"}
+    if len(password) > 128:
+        return {"status": "rejected", "reason": "password-too-long"}
+
+    dev = wifi_device()
+    candidate = CANDIDATE_PREFIX + hashlib.sha256(ssid.encode("utf-8")).hexdigest()[:12]
+    try:
+        try:
+            run("connection", "delete", candidate)
+        except RuntimeError:
+            pass
+        try:
+            run("connection", "down", AP_NAME)
+        except RuntimeError:
+            pass
+        argv = ["device", "wifi", "connect", ssid, "ifname", dev, "name", candidate]
+        if password:
+            argv += ["password", password]
+        run(*argv, timeout=35)
+        if not connected_l3(dev):
+            raise RuntimeError("candidate-not-connected")
+        persist_profile(candidate)
+        write_state("connected", ssid=ssid, connection=candidate)
+        return {"status": "connected", "ssid": ssid}
+    except Exception as exc:
+        try:
+            run("connection", "delete", candidate)
+        except Exception:
+            pass
+        write_state("failed", reason=str(exc)[:160])
+        return {"status": "failed", "reason": str(exc)[:160]}
+
+HTML = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CyberHIVE setup</title><style>body{font:16px system-ui;max-width:620px;margin:auto;padding:28px}button,input,select{font:inherit;width:100%;box-sizing:border-box;padding:10px;margin:6px 0}pre{white-space:pre-wrap}</style></head><body><h1>CyberHIVE network setup</h1><p>Local provisioning only. The fallback AP will disappear after a successful connection.</p><button onclick="scan()">Scan Wi-Fi</button><select id="ssid"></select><input id="pw" type="password" autocomplete="current-password" placeholder="Wi-Fi password"><button onclick="connectWifi()">Connect</button><pre id="out"></pre><script>async function req(p,o){let r=await fetch(p,o),t=await r.text(),d;try{d=JSON.parse(t)}catch{d={error:t}}if(!r.ok)throw Error(d.error||r.statusText);return d}async function scan(){try{let d=await req('/api/scan');ssid.innerHTML='';for(let n of d.networks){let o=document.createElement('option');o.value=n.ssid;o.textContent=n.ssid+' ('+n.signal+'%)';ssid.appendChild(o)}}catch(e){out.textContent=e.message}}async function connectWifi(){out.textContent='Applying network. The AP may disconnect if successful.';try{await req('/api/wifi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid:ssid.value,password:pw.value})})}catch(e){out.textContent=e.message}}scan()</script></body></html>"""
+
+class Handler(BaseHTTPRequestHandler):
+    def send_json(self, status: int, payload: object) -> None:
+        body = json.dumps(payload, separators=(",", ":")).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def ap_peer(self) -> bool:
+        return self.client_address[0].startswith("10.42.0.")
+
+    def do_GET(self) -> None:
+        if not self.ap_peer():
+            self.send_json(HTTPStatus.FORBIDDEN, {"error": "provisioning-subnet-only"}); return
+        if self.path == "/":
+            body = HTML.encode()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers(); self.wfile.write(body); return
+        if self.path == "/api/scan":
+            try:
+                self.send_json(HTTPStatus.OK, {"networks": scan()})
+            except Exception as exc:
+                self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(exc)[:160]})
+            return
+        self.send_json(HTTPStatus.NOT_FOUND, {"error": "not-found"})
+
+    def do_POST(self) -> None:
+        if not self.ap_peer():
+            self.send_json(HTTPStatus.FORBIDDEN, {"error": "provisioning-subnet-only"}); return
+        if self.path != "/api/wifi":
+            self.send_json(HTTPStatus.NOT_FOUND, {"error": "not-found"}); return
+        if not TX_LOCK.acquire(blocking=False):
+            self.send_json(HTTPStatus.CONFLICT, {"error": "transaction-active"}); return
+        try:
+            if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+                self.send_json(HTTPStatus.BAD_REQUEST, {"error": "application-json-required"}); return
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            if length < 0 or length > 2048:
+                self.send_json(HTTPStatus.BAD_REQUEST, {"error": "request-too-large"}); return
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            ssid = str(payload.get("ssid", ""))
+            password = str(payload.get("password", ""))
+            self.send_json(HTTPStatus.ACCEPTED, {"status": "applying", "ssid": ssid})
+            threading.Thread(target=worker, args=(ssid, password), daemon=True).start()
+        except Exception:
+            TX_LOCK.release()
+            self.send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid-request"})
+
+    def log_message(self, fmt: str, *args: object) -> None:
+        return
+
+def worker(ssid: str, password: str) -> None:
+    try:
+        time.sleep(1)
+        apply_wifi(ssid, password)
+    finally:
+        TX_LOCK.release()
+
+def main() -> int:
+    if os.geteuid() != 0:
+        return 2
+    while True:
+        try:
+            server = ThreadingHTTPServer((AP_ADDR, AP_PORT), Handler)
+            write_state("ready", address=f"http://{AP_ADDR}:{AP_PORT}/")
+            server.serve_forever()
+        except OSError:
+            write_state("waiting-for-ap")
+            time.sleep(3)
+
+if __name__ == "__main__":
+    raise SystemExit(main())

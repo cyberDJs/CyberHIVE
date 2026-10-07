@@ -1,0 +1,23 @@
+[Unit]
+Description=CyberHIVE headless OOB network fallback
+Requires=cyberhive-persist-init.service NetworkManager.service
+After=cyberhive-persist-init.service NetworkManager.service
+Before=cyberhive-web.service
+ConditionPathIsMountPoint=/var/lib/cyberhive-persist
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/cyberhive-oob-network
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/cyberhive /var/lib/cyberhive-persist/state/network /etc/NetworkManager/system-connections
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

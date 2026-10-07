@@ -1,0 +1,94 @@
+#!/bin/sh
+set -eu
+
+. /etc/cyberhive/live/config.env
+
+AP_NAME=cyberhive-oob
+AP_ADDR=10.42.0.1/24
+FALLBACK_SECONDS=45
+STATE_FILE="$CYBERHIVE_STATE_DIR/oob-network.json"
+CRED_FILE="$CYBERHIVE_PERSIST_ROOT/state/network/oob-ap.env"
+
+write_state() {
+  status=$1
+  reason=${2:-}
+  jq -n --arg status "$status" --arg reason "$reason"     '{schema:"cyberhive.oob.network.v1",status:$status,reason:$reason}' >"$STATE_FILE.tmp"
+  chmod 0644 "$STATE_FILE.tmp"
+  mv "$STATE_FILE.tmp" "$STATE_FILE"
+}
+
+wifi_device() {
+  nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="wifi"{print $1; exit}'
+}
+
+has_uplink() {
+  nmcli -t -f TYPE,STATE,CONNECTION device status |
+    awk -F: '$2=="connected" && ($1=="ethernet" || ($1=="wifi" && $3!="cyberhive-oob")){found=1} END{exit !found}'
+}
+
+ensure_credentials() {
+  install -d -m 0700 "$CYBERHIVE_PERSIST_ROOT/state/network"
+  if [ ! -s "$CRED_FILE" ]; then
+    suffix=$(sha256sum /etc/machine-id | cut -c1-8 | tr '[:lower:]' '[:upper:]')
+    psk=$(python3 -c 'import secrets; a="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"; print("".join(secrets.choice(a) for _ in range(20)))')
+    umask 077
+    {
+      printf 'SSID=%s\n' "CyberHIVE-$suffix"
+      printf 'PSK=%s\n' "$psk"
+    } >"$CRED_FILE.tmp"
+    chmod 0600 "$CRED_FILE.tmp"
+    mv "$CRED_FILE.tmp" "$CRED_FILE"
+  fi
+}
+
+start_ap() {
+  dev=$1
+  . "$CRED_FILE"
+  if ! nmcli -t -f NAME connection show | grep -Fx "$AP_NAME" >/dev/null; then
+    nmcli connection add type wifi ifname "$dev" con-name "$AP_NAME" ssid "$SSID" >/dev/null
+  fi
+  nmcli connection modify "$AP_NAME"     802-11-wireless.mode ap     ipv4.method shared ipv4.addresses "$AP_ADDR"     ipv6.method disabled     wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$PSK"     connection.autoconnect no
+  nmcli connection up "$AP_NAME" ifname "$dev" >/dev/null
+  write_state ap-active
+}
+
+stop_ap() {
+  nmcli connection down "$AP_NAME" >/dev/null 2>&1 || true
+}
+
+ensure_credentials
+offline_since=$(date +%s)
+
+while :; do
+  if has_uplink; then
+    stop_ap
+    write_state uplink-active
+    offline_since=$(date +%s)
+    sleep 10
+    continue
+  fi
+
+  now=$(date +%s)
+  if [ $((now - offline_since)) -lt "$FALLBACK_SECONDS" ]; then
+    write_state waiting-for-uplink
+    sleep 5
+    continue
+  fi
+
+  dev=$(wifi_device || true)
+  if [ -z "$dev" ]; then
+    write_state blocked no-wifi-device
+    sleep 10
+    continue
+  fi
+
+  start_ap "$dev" || {
+    write_state degraded ap-start-failed
+    sleep 10
+    continue
+  }
+
+  while ! has_uplink; do
+    sleep 10
+  done
+done
