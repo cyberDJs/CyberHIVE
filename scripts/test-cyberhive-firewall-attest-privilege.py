@@ -22,14 +22,15 @@ web_service = WEB_SERVICE.read_text()
 assert "chmod 0440 /etc/sudoers.d/91-cyberhive-firewall-attest" in hook
 assert "User=cyberhive-web" in web_service
 assert "cyberhive ALL=(root) NOPASSWD: /usr/local/bin/cyberhive-management-firewall-attest" in sudoers
-assert "cyberhive-web ALL=(root) NOPASSWD: /usr/local/bin/cyberhive-management-firewall-attest" in sudoers
+assert "cyberhive-web" not in sudoers
 assert "/usr/local/bin/cyberhive-management-firewall-attest" in sudoers
 assert "cyberhive-management-firewall " not in sudoers
 assert "iptables" not in sudoers
 assert "ip6tables" not in sudoers
 
-assert 'if [ "$(id -u)" -eq 0 ]; then' in live
-assert "/usr/local/bin/cyberhive-management-firewall-attest" in live
-assert "sudo -n /usr/local/bin/cyberhive-management-firewall-attest" in live
+assert "management-firewall-attest.json" in live
+assert "cyberhive.management_firewall.attestation.v1" in live
+assert "/usr/local/bin/cyberhive-management-firewall-attest" not in live
+assert "sudo -n" not in live
 
-print("CyberHIVE firewall attestation least-privilege execution contract passed")
+print("CyberHIVE firewall attestation least-privilege read-only health contract passed")
