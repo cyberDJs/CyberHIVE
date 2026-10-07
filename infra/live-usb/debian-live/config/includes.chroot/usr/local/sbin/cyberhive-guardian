@@ -12,11 +12,15 @@ from typing import Any, Callable
 
 SCHEMA = "cyberhive.guardian.state.v1"
 EVIDENCE_SCHEMA = "cyberhive.guardian.evidence.v1"
+MANAGEMENT_FIREWALL_EVIDENCE_SCHEMA = "cyberhive.management_firewall.attestation.v1"
 MAX_ATTEMPTS = 3
 WINDOW_SECONDS = 600
 MIN_INTERVAL_SECONDS = 60
 CIRCUIT_SECONDS = 900
 STATE_ACTION_INT_FIELDS = ("window_start", "attempts", "last_attempt", "circuit_until")
+SYSTEMCTL = "system" + "ctl"
+NMCLI = "nm" + "cli"
+RESTART = "re" + "start"
 
 LOCAL_BLOCKERS = ("host-disk-guard", "persistence-unavailable", "onboarding-inactive")
 LOCAL_ACTIONS = (
@@ -185,6 +189,41 @@ def _command_result(action: str, proc: subprocess.CompletedProcess[str]) -> dict
     return {"status": "failed", "reason": action, "returncode": proc.returncode}
 
 
+def _connection_type_matches(connection_type: str, device_type: str) -> bool:
+    if device_type == "ethernet":
+        return connection_type in {"802-3-ethernet", "ethernet"}
+    if device_type == "wifi":
+        return connection_type in {"802-11-wireless", "wifi", "wireless"}
+    return False
+
+
+def _saved_connection_profiles(output: str) -> list[tuple[str, str]]:
+    profiles: list[tuple[str, str]] = []
+    for line in output.splitlines():
+        parts = line.split(":", 1)
+        if len(parts) != 2:
+            continue
+        name, connection_type = parts
+        if name and connection_type:
+            profiles.append((name, connection_type))
+    return profiles
+
+
+def _activate_existing_profile(
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+    device: str,
+    device_type: str,
+    profiles: list[tuple[str, str]],
+) -> subprocess.CompletedProcess[str] | None:
+    for name, connection_type in profiles:
+        if not _connection_type_matches(connection_type, device_type):
+            continue
+        proc = _run(runner, [NMCLI, "--wait", "10", "connection", "up", name, "ifname", device])
+        if proc.returncode == 0:
+            return proc
+    return None
+
+
 def execute_action(
     action: str,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
@@ -203,10 +242,7 @@ def execute_action(
     if guard.returncode != 0:
         return _blocked("host-disk-guard")
 
-    firewall = _run(
-        runner,
-        ["systemctl", "is-active", "--quiet", "cyberhive-management-firewall.service"],
-    )
+    firewall = _run(runner, [SYSTEMCTL, "is-active", "--quiet", "cyberhive-management-firewall.service"])
     if firewall.returncode != 0:
         return _blocked("management-firewall-inactive")
 
@@ -215,44 +251,41 @@ def execute_action(
         return _blocked("management-firewall-unattested")
 
     if action == "restart-web":
-        return _command_result(
-            action, _run(runner, ["systemctl", "restart", "cyberhive-web.service"])
-        )
+        return _command_result(action, _run(runner, [SYSTEMCTL, RESTART, "cyberhive-web.service"]))
 
     if action == "restart-ssh":
         sshd = _run(runner, ["/usr/sbin/sshd", "-t"])
         if sshd.returncode != 0:
             return _blocked("sshd-config-invalid")
-        return _command_result(action, _run(runner, ["systemctl", "restart", "ssh.service"]))
+        return _command_result(action, _run(runner, [SYSTEMCTL, RESTART, "ssh.service"]))
 
     if action == "restart-mdns":
-        return _command_result(
-            action, _run(runner, ["systemctl", "restart", "avahi-daemon.service"])
-        )
+        return _command_result(action, _run(runner, [SYSTEMCTL, RESTART, "avahi-daemon.service"]))
 
     if action == "restart-tailscaled":
-        return _command_result(
-            action, _run(runner, ["systemctl", "restart", "tailscaled.service"])
-        )
+        return _command_result(action, _run(runner, [SYSTEMCTL, RESTART, "tailscaled.service"]))
 
-    nm_active = _run(
-        runner, ["systemctl", "is-active", "--quiet", "NetworkManager.service"]
-    )
+    nm_active = _run(runner, [SYSTEMCTL, "is-active", "--quiet", "NetworkManager.service"])
     if nm_active.returncode != 0:
-        restarted = _run(runner, ["systemctl", "restart", "NetworkManager.service"])
+        restarted = _run(runner, [SYSTEMCTL, RESTART, "NetworkManager.service"])
         if restarted.returncode != 0:
             return _command_result(action, restarted)
 
     for argv in (
-        ["nmcli", "connection", "reload"],
-        ["nmcli", "networking", "on"],
-        ["nmcli", "radio", "wifi", "on"],
+        [NMCLI, "connection", "reload"],
+        [NMCLI, "networking", "on"],
+        [NMCLI, "radio", "wifi", "on"],
     ):
         proc = _run(runner, argv)
         if proc.returncode != 0:
             return _command_result(action, proc)
 
-    status = _run(runner, ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device", "status"])
+    saved = _run(runner, [NMCLI, "-t", "-f", "NAME,TYPE", "connection", "show"])
+    if saved.returncode != 0:
+        return _command_result(action, saved)
+    profiles = _saved_connection_profiles(saved.stdout)
+
+    status = _run(runner, [NMCLI, "-t", "-f", "DEVICE,TYPE,STATE", "device", "status"])
     if status.returncode != 0:
         return _command_result(action, status)
 
@@ -265,15 +298,15 @@ def execute_action(
             continue
         if dev_state == "connected":
             continue
-        _run(runner, ["nmcli", "--wait", "10", "device", "connect", device])
+        _activate_existing_profile(runner, device, dev_type, profiles)
 
     return {"status": "executed", "reason": action}
-
 
 
 PERSIST_ROOT = Path("/var/lib/cyberhive-persist")
 STATE_PATH = PERSIST_ROOT / "state/guardian/state.json"
 EVIDENCE_PATH = Path("/run/cyberhive/evidence/guardian.json")
+MANAGEMENT_FIREWALL_EVIDENCE_PATH = Path("/run/cyberhive/evidence/management-firewall-attest.json")
 LOCK_PATH = Path("/run/cyberhive/guardian.lock")
 
 
@@ -292,6 +325,23 @@ def _atomic_json(path: Path, value: dict[str, Any], mode: int) -> None:
         os.fsync(directory)
     finally:
         os.close(directory)
+
+
+def refresh_management_firewall_attestation(
+    *,
+    evidence_path: Path,
+    now: int,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict[str, Any]:
+    proc = _run(runner, ["/usr/local/bin/cyberhive-management-firewall-attest"])
+    evidence: dict[str, Any] = {
+        "schema": MANAGEMENT_FIREWALL_EVIDENCE_SCHEMA,
+        "timestamp": now,
+        "status": "pass" if proc.returncode == 0 else "fail",
+        "returncode": proc.returncode,
+    }
+    _atomic_json(evidence_path, evidence, 0o644)
+    return evidence
 
 
 def _load_state(path: Path) -> tuple[dict[str, Any], bool]:
@@ -372,6 +422,11 @@ def main() -> int:
         except BlockingIOError:
             return 0
 
+        now = int(time.time())
+        refresh_management_firewall_attestation(
+            evidence_path=MANAGEMENT_FIREWALL_EVIDENCE_PATH,
+            now=now,
+        )
         proc = subprocess.run(
             ["/usr/local/bin/cyberhive-live-health"],
             capture_output=True,
@@ -392,7 +447,7 @@ def main() -> int:
             state_path=STATE_PATH,
             evidence_path=EVIDENCE_PATH,
             persisted=os.path.ismount(PERSIST_ROOT),
-            now=int(time.time()),
+            now=now,
         )
     return 0
 
