@@ -16,6 +16,8 @@ on:
       - 'docs/adr/ADR-0008-live-usb-real-image-build-gate.md'
       - 'docs/notes/WB-HIVE-BOOT-0004-source-map.md'
       - 'scripts/validate-live-usb-real-image-build-gate.sh'
+      - 'scripts/validate-cyberhive-oob.sh'
+      - 'scripts/test-cyberhive-oob-onboarding.py'
       - '.github/workflows/live-usb-real-image-build-gate.yml'
       - '.github/workflows/live-usb-real-image-build-manual.yml'
       - '.gitignore'
@@ -58,6 +60,9 @@ jobs:
         run: |
           if test -f scripts/validate-live-appliance-v0-3.sh; then
             sh scripts/validate-live-appliance-v0-3.sh
+          fi
+          if test -f scripts/validate-cyberhive-oob.sh; then
+            sh scripts/validate-cyberhive-oob.sh
           fi
 
   approved-real-image-build:
