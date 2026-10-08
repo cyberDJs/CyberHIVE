@@ -17,6 +17,8 @@ for forbidden in (
     "*** CYBERHIVE DIAGNOSTIC BUILD ***",
     "systemd.log_level=debug",
     "rd.emergency=shell",
+    "rd.debug",
+    "panic=-1",
 ):
     if forbidden in builder:
         errors.append("release image still contains diagnostic GRUB setting: " + forbidden)
@@ -31,6 +33,20 @@ for marker in (
 ):
     if marker not in builder:
         errors.append("missing EFI boot evidence: " + marker)
+
+for marker in (
+    "::/cyberhive/slots/A/vmlinuz",
+    "::/cyberhive/slots/A/initrd.img",
+    "set kernroot=($efi)/cyberhive/slots/$boot_slot",
+    'linux "$kernroot/vmlinuz"',
+    'initrd "$kernroot/initrd.img"',
+    '"efi_kernel_payload": true',
+):
+    if marker not in builder:
+        errors.append("missing EFI kernel-payload repair contract: " + marker)
+
+if 'linux "$slotroot/vmlinuz"' in builder or 'initrd "$slotroot/initrd.img"' in builder:
+    errors.append("GRUB still loads kernel/initrd directly from ext4 slotroot")
 
 for marker in ("--state-dir", "--setup-card", "wifi_qr_payload"):
     if marker not in provisioner:
