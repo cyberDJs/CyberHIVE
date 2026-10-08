@@ -8,7 +8,10 @@ network_unit="$root/etc/systemd/system/cyberhive-oob-network.service"
 onboard_unit="$root/etc/systemd/system/cyberhive-oob-onboard.service"
 hook='infra/live-usb/debian-live/config/hooks/live/002-cyberhive-unattended-v03.hook.chroot'
 
-for path in "$network" "$onboard" "$network_unit" "$onboard_unit"   'docs/adr/ADR-0027-ap-fallback-headless-oob.md'   'docs/work-blocks/WB-HIVE-BOOT-0013-ap-fallback-oob.md'; do
+for path in "$network" "$onboard" "$network_unit" "$onboard_unit" \
+  'docs/adr/ADR-0027-ap-fallback-headless-oob.md' \
+  'docs/work-blocks/WB-HIVE-BOOT-0013-ap-fallback-oob.md' \
+  'scripts/test-unattended-oob-release-contract.py'; do
   test -f "$path" || { echo "missing OOB artifact: $path" >&2; exit 1; }
 done
 
@@ -45,5 +48,6 @@ grep -F 'PasswordAuthentication no' "$root/usr/local/sbin/cyberhive-onboarding-i
 
 python3 scripts/test-cyberhive-oob-onboarding.py
 python3 scripts/test-cyberhive-oob-provisioner.py
+python3 scripts/test-unattended-oob-release-contract.py
 
 echo 'CyberHIVE headless OOB onboarding validation passed'
