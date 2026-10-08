@@ -8,6 +8,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 builder = (ROOT / "infra/live-usb/debian-live/build-unattended-disk-image.sh").read_text()
+active_builder = "\n".join(
+    line for line in builder.splitlines() if not line.lstrip().startswith("#")
+)
 provisioner = (ROOT / "scripts/provision-cyberhive-oob-credentials.py").read_text()
 onboard = (ROOT / "infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-oob-onboard").read_text()
 network = (ROOT / "infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-oob-network").read_text()
@@ -20,8 +23,8 @@ for forbidden in (
     "rd.debug",
     "panic=-1",
 ):
-    if forbidden in builder:
-        errors.append("release image still contains diagnostic GRUB setting: " + forbidden)
+    if forbidden in active_builder:
+        errors.append("release image still contains active diagnostic GRUB setting: " + forbidden)
 
 for marker in (
     "grub-mkstandalone",
@@ -45,8 +48,8 @@ for marker in (
     if marker not in builder:
         errors.append("missing EFI kernel-payload repair contract: " + marker)
 
-if 'linux "$slotroot/vmlinuz"' in builder or 'initrd "$slotroot/initrd.img"' in builder:
-    errors.append("GRUB still loads kernel/initrd directly from ext4 slotroot")
+if 'linux "$slotroot/vmlinuz"' in active_builder or 'initrd "$slotroot/initrd.img"' in active_builder:
+    errors.append("active GRUB still loads kernel/initrd directly from ext4 slotroot")
 
 for marker in ("--state-dir", "--setup-card", "wifi_qr_payload"):
     if marker not in provisioner:
