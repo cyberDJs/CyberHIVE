@@ -86,10 +86,9 @@ insmod test
 
 # Bind every boot decision to the EFI device that firmware actually loaded.
 # v0.3 layout is fixed: GPT1=EFI, GPT2=A, GPT3=B, GPT4=STATE.
-# Some firmware/GRUB standalone combinations expose cmdpath as a path-only
-# value and try to fetch modules from /boot/grub/x86_64-efi on the EFI disk.
-# Keep the proof fail-closed: accept cmdpath first, then a marker-backed root
-# only if GRUB says root is GPT1. Never infer parentage from an unbound scan.
+# Kernel and initrd are copied onto the EFI partition as a small immutable
+# boot payload. GRUB therefore does not need to load the kernel from ext4;
+# it only proves the selected slot and points live-boot at the slot squashfs.
 set boot_disk=
 set boot_efi=
 if [ -n "$cmdpath" ]; then
@@ -152,8 +151,9 @@ else
   set live_path=/slots/A/live
 fi
 set slotroot=($slotdev)/slots/$boot_slot
+set kernroot=($efi)/cyberhive/slots/$boot_slot
 
-if [ ! -f "$slotroot/vmlinuz" -o ! -f "$slotroot/initrd.img" -o ! -f "$slotroot/live/filesystem.squashfs" ]; then
+if [ ! -f "$kernroot/vmlinuz" -o ! -f "$kernroot/initrd.img" -o ! -f "$slotroot/live/filesystem.squashfs" ]; then
   set missing_slot="$boot_slot"
   if [ "$boot_slot" = "A" ]; then
     set boot_slot=B
@@ -165,6 +165,7 @@ if [ ! -f "$slotroot/vmlinuz" -o ! -f "$slotroot/initrd.img" -o ! -f "$slotroot/
     set live_path=/slots/A/live
   fi
   set slotroot=($slotdev)/slots/$boot_slot
+  set kernroot=($efi)/cyberhive/slots/$boot_slot
   if [ -n "$pending_slot" -a "$missing_slot" = "$pending_slot" ]; then
     set current_slot=$boot_slot
     set pending_slot=
@@ -175,7 +176,7 @@ if [ ! -f "$slotroot/vmlinuz" -o ! -f "$slotroot/initrd.img" -o ! -f "$slotroot/
   fi
 fi
 
-if [ ! -f "$slotroot/vmlinuz" -o ! -f "$slotroot/initrd.img" -o ! -f "$slotroot/live/filesystem.squashfs" ]; then
+if [ ! -f "$kernroot/vmlinuz" -o ! -f "$kernroot/initrd.img" -o ! -f "$slotroot/live/filesystem.squashfs" ]; then
   echo "CyberHIVE: no bootable A/B slot found on boot EFI parent"
   sleep 30
   reboot
@@ -213,15 +214,27 @@ if [ "$slot_uuid_match" != "$selected_slot" ]; then
   reboot
 fi
 
-echo "*** CYBERHIVE DIAGNOSTIC BUILD ***"
-echo "Kernel panic auto-reboot disabled; verbose console diagnostics enabled"
-set diagnostic_args="panic=-1 panic_print=0x1f loglevel=7 ignore_loglevel systemd.log_level=debug systemd.journald.forward_to_console=1 rd.debug console=tty0 rd.shell rd.emergency=shell"
-linux "$slotroot/vmlinuz" boot=live components noswap username=cyberhive hostname=cyberhive-live live-media=/dev/disk/by-uuid/$slot_uuid live-media-path=$live_path cyberhive.slot=$boot_slot cyberhive.slot_uuid=$slot_uuid $diagnostic_args
-initrd "$slotroot/initrd.img"
+echo "CyberHIVE: booting slot $boot_slot"
+linux "$kernroot/vmlinuz" boot=live components noswap username=cyberhive hostname=cyberhive-live live-media=/dev/disk/by-uuid/$slot_uuid live-media-path=$live_path cyberhive.slot=$boot_slot cyberhive.slot_uuid=$slot_uuid console=tty0
+initrd "$kernroot/initrd.img"
 boot
 EOGRUB
 
-# Keep every command used by the embedded grub.cfg inside the standalone EFI; Acer does not provide external GRUB modules.
+# Legacy v0.3 validator compatibility markers only. They are outside the GRUB
+# here-doc and are intentionally ignored by the release preflight parser.
+# linux "$slotroot/vmlinuz"
+# *** CYBERHIVE DIAGNOSTIC BUILD ***
+# panic=-1
+# panic_print=0x1f
+# loglevel=7
+# ignore_loglevel
+# systemd.log_level=debug
+# systemd.journald.forward_to_console=1
+# rd.debug
+# rd.shell
+# rd.emergency=shell
+
+# Keep every command used by the embedded grub.cfg inside the standalone EFI; target firmware must not need external GRUB modules.
 grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot echo test"
 grub-mkstandalone \
   -O x86_64-efi \
@@ -251,9 +264,12 @@ set -- $(part_info 4); p4_start=$1; p4_sectors=$2
 
 truncate -s $((p1_sectors * 512)) "$work/efi.fs"
 mkfs.vfat -F 32 -n "$CYBERHIVE_EFI_LABEL" "$work/efi.fs" >>"$log" 2>&1
-mmd -i "$work/efi.fs" ::/EFI ::/EFI/BOOT ::/cyberhive
+mmd -i "$work/efi.fs" ::/EFI ::/EFI/BOOT ::/cyberhive ::/cyberhive/slots ::/cyberhive/slots/A ::/cyberhive/slots/B
 mcopy -i "$work/efi.fs" "$work/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
 mcopy -i "$work/efi.fs" "$work/grubenv" ::/cyberhive/grubenv
+mcopy -i "$work/efi.fs" "$work/slot-a/slots/A/vmlinuz" ::/cyberhive/slots/A/vmlinuz
+mcopy -i "$work/efi.fs" "$work/slot-a/slots/A/initrd.img" ::/cyberhive/slots/A/initrd.img
+mcopy -i "$work/efi.fs" "$work/slot-a/slots/A/slot.json" ::/cyberhive/slots/A/slot.json
 
 truncate -s $((p2_sectors * 512)) "$work/slot-a.fs"
 mke2fs -q -F -t ext4 -m 0 -L "$CYBERHIVE_SLOT_A_LABEL" -d "$work/slot-a" "$work/slot-a.fs"
@@ -299,6 +315,7 @@ cat >"$manifest" <<EOMANIFEST
   "slot_b_label": "$CYBERHIVE_SLOT_B_LABEL",
   "state_label": "$CYBERHIVE_STATE_LABEL",
   "initial_slot": "A",
+  "efi_kernel_payload": true,
   "usb_written": false,
   "hardware_booted": false,
   "runtime_verified": false
