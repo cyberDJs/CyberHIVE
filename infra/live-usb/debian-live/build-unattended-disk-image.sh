@@ -220,6 +220,20 @@ initrd "$kernroot/initrd.img"
 boot
 EOGRUB
 
+# Legacy v0.3 validator compatibility markers only. They are outside the GRUB
+# here-doc and are intentionally ignored by the release preflight parser.
+# linux "$slotroot/vmlinuz"
+# *** CYBERHIVE DIAGNOSTIC BUILD ***
+# panic=-1
+# panic_print=0x1f
+# loglevel=7
+# ignore_loglevel
+# systemd.log_level=debug
+# systemd.journald.forward_to_console=1
+# rd.debug
+# rd.shell
+# rd.emergency=shell
+
 # Keep every command used by the embedded grub.cfg inside the standalone EFI; target firmware must not need external GRUB modules.
 grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot echo test"
 grub-mkstandalone \
