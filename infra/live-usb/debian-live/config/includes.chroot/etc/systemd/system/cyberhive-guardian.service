@@ -1,0 +1,12 @@
+[Unit]
+Description=CyberHIVE bounded appliance Guardian
+Requires=cyberhive-persist-init.service
+After=cyberhive-persist-init.service cyberhive-onboarding-init.service cyberhive-management-firewall.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cyberhive-guardian
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true

@@ -3,6 +3,8 @@ set -eu
 
 root='infra/live-usb/debian-live/config/includes.chroot'
 required='docs/work-blocks/WB-HIVE-BOOT-0006-unattended-ota-v0-3.md
+docs/work-blocks/WB-HIVE-BOOT-0010-guardian-l0-l1.md
+docs/work-blocks/WB-HIVE-BOOT-0011-firewall-attestation.md
 docs/adr/ADR-0026-cyberhive-unattended-single-usb-ab-ota.md
 docs/runbooks/live-appliance-v0-3.md
 docs/security/live-appliance-v0-3-safety.md
@@ -10,21 +12,28 @@ infra/live-usb/debian-live/build-unattended-disk-image.sh
 infra/live-usb/debian-live/config/hooks/live/002-cyberhive-unattended-v03.hook.chroot
 infra/live-usb/debian-live/config/includes.chroot/usr/local/lib/cyberhive-device.sh
 infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-host-disk-guard
+infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-management-firewall-attest
+infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-health-classify
+infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-live-health
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-persist-init
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-firstboot
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-management-firewall
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-update
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-update-check
 infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-boot-commit
+infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-guardian
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-persist-init.service
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/NetworkManager.service.d/10-cyberhive-persist.conf
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/tailscaled.service.d/10-cyberhive-persist.conf
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-management-firewall.service
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/ssh.service.d/20-cyberhive-management-firewall.conf
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-boot-commit.service
+infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-guardian.service
+infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-guardian.timer
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-update-check.service
 infra/live-usb/debian-live/config/includes.chroot/etc/systemd/system/cyberhive-update-check.timer
 infra/live-usb/debian-live/config/includes.chroot/etc/profile.d/20-cyberhive-firstboot.sh
+infra/live-usb/debian-live/config/includes.chroot/etc/sudoers.d/91-cyberhive-firewall-attest
 infra/live-usb/debian-live/config/includes.chroot/etc/cyberhive/bootstrap/authorized_keys
 infra/live-usb/debian-live/config/includes.chroot/etc/cyberhive/ota/allowed_signers
 .github/workflows/live-appliance-v0-3.yml'
@@ -39,6 +48,7 @@ for f in \
   infra/live-usb/debian-live/config/hooks/live/002-cyberhive-unattended-v03.hook.chroot \
   "$root/usr/local/lib/cyberhive-device.sh" \
   "$root/usr/local/bin/cyberhive-host-disk-guard" \
+  "$root/usr/local/bin/cyberhive-live-health" \
   "$root/usr/local/sbin/cyberhive-persist-init" \
   "$root/usr/local/sbin/cyberhive-firstboot" \
   "$root/usr/local/sbin/cyberhive-management-firewall" \
@@ -49,6 +59,12 @@ for f in \
   sh -n "$f"
 done
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-web").read_text())'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-health-classify").read_text())'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("infra/live-usb/debian-live/config/includes.chroot/usr/local/bin/cyberhive-management-firewall-attest").read_text())'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("infra/live-usb/debian-live/config/includes.chroot/usr/local/sbin/cyberhive-guardian").read_text())'
+test -x "$root/usr/local/bin/cyberhive-health-classify"
+test -x "$root/usr/local/bin/cyberhive-management-firewall-attest"
+test -x "$root/usr/local/sbin/cyberhive-guardian"
 
 line_of() {
   file=$1
@@ -98,6 +114,16 @@ grep -F 'cyberhive_verify_live_slot' "$persist_init" >/dev/null
 grep -F 'cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_STATE_LABEL"' "$persist_init" >/dev/null
 assert_before "$persist_init" 'cyberhive_partition_on_parent_by_label "$parent" "$CYBERHIVE_STATE_LABEL"' 'mount -o rw,nodev,nosuid "$state_dev" "$persist"'
 if grep -F 'blkid -L' "$persist_init"; then echo 'persist-init must not resolve critical siblings by global label' >&2; exit 1; fi
+grep -F 'write_persistence_state()' "$persist_init" >/dev/null
+grep -F 'chmod 0644 "$run_state/persistence-state"' "$persist_init" >/dev/null
+for persistence_state in invalid-slot live-medium-mismatch non-usb-parent sibling-label-missing-or-ambiguous mounted-state-mismatch; do
+  grep -F "write_persistence_state '$persistence_state'" "$persist_init" >/dev/null
+done
+grep -F 'write_persistence_state "mounted:$state_dev:$parent:$current"' "$persist_init" >/dev/null
+if grep -F 'chmod 0640 "$run_state/persistence-state"' "$persist_init"; then
+  echo 'persistence health state must remain readable by unprivileged health tooling' >&2
+  exit 1
+fi
 
 firstboot="$root/usr/local/sbin/cyberhive-firstboot"
 grep -F 'state/network' "$firstboot" >/dev/null
@@ -132,6 +158,32 @@ grep -F 'malformed persisted current-sequence; refusing OTA' "$update" >/dev/nul
 grep -F 'malformed persisted failed-sequence; refusing OTA' "$update" >/dev/null
 assert_before "$update" 'atomic_text "$sequence" "$otadir/pending-sequence"' 'grub-editenv "$envfile" set'
 if grep -n -E '(^|[[:space:]])(dd|mkfs|wipefs|parted|sgdisk)([[:space:]]|$)' "$update"; then echo 'runtime OTA must not perform raw disk or partition mutation' >&2; exit 1; fi
+
+health="$root/usr/local/bin/cyberhive-live-health"
+classifier="$root/usr/local/bin/cyberhive-health-classify"
+firewall_attestor="$root/usr/local/bin/cyberhive-management-firewall-attest"
+grep -F 'cyberhive.management.firewall.attestation.v1' "$firewall_attestor" >/dev/null
+grep -F 'ipv4-prefix-mismatch' "$firewall_attestor" >/dev/null
+grep -F 'ipv6-prefix-mismatch' "$firewall_attestor" >/dev/null
+grep -F 'cyberhive.health.classes.v1' "$classifier" >/dev/null
+grep -F '"local_safe"' "$classifier" >/dev/null
+grep -F '"connected"' "$classifier" >/dev/null
+grep -F '"remote_ready"' "$classifier" >/dev/null
+grep -F '"management_firewall"' "$classifier" >/dev/null
+grep -F '"management-firewall"' "$classifier" >/dev/null
+grep -F '/usr/local/bin/cyberhive-management-firewall-attest' "$health" >/dev/null
+grep -F 'management_firewall' "$health" >/dev/null
+grep -F 'sudo -n /usr/local/bin/cyberhive-management-firewall-attest' "$health" >/dev/null
+grep -F '/usr/local/bin/cyberhive-health-classify' "$health" >/dev/null
+firewall_attest_sudoers="$root/etc/sudoers.d/91-cyberhive-firewall-attest"
+grep -Fx 'cyberhive ALL=(root) NOPASSWD: /usr/local/bin/cyberhive-management-firewall-attest' "$firewall_attest_sudoers" >/dev/null
+if grep -E '(iptables|ip6tables|cyberhive-management-firewall[[:space:]])' "$firewall_attest_sudoers"; then
+  echo 'firewall attestation sudoers must expose only the read-only attestor' >&2
+  exit 1
+fi
+grep -F -- '--argjson health "$health"' "$health" >/dev/null
+grep -F 'cyberhive.live.health.v1' "$health" >/dev/null
+grep -F '[ "$local_safe" = pass ] && status='"'"'ok'"'"'' "$health" >/dev/null
 
 commit="$root/usr/local/sbin/cyberhive-boot-commit"
 grep -F '. /usr/local/lib/cyberhive-device.sh' "$commit" >/dev/null
@@ -177,6 +229,43 @@ grep -F 'read_sequence_file()' "$commit" >/dev/null
 grep -F 'malformed persisted current-sequence; rolling back candidate' "$commit" >/dev/null
 grep -F 'quarantine_release "$state_pending_release" "$state_pending_sequence" malformed-current-sequence' "$commit" >/dev/null
 grep -F 'cyberhive-host-disk-guard >/dev/null 2>&1' "$commit" >/dev/null
+grep -F '.health.local_safe == "pass"' "$commit" >/dev/null
+python3 - "$commit" <<'PY_HEALTH_GATE'
+from pathlib import Path
+import sys
+src=Path(sys.argv[1]).read_text()
+start=src.index("health_ok='false'")
+end=src.index("if [ \"$health_ok\" = 'true' ]; then", start)
+gate=src[start:end]
+assert 'cyberhive-live-health' in gate
+assert '.health.local_safe == "pass"' in gate
+assert 'tailscale status' not in gate
+assert 'systemctl is-active --quiet tailscaled.service' not in gate
+PY_HEALTH_GATE
+
+guardian="$root/usr/local/sbin/cyberhive-guardian"
+guardian_service="$root/etc/systemd/system/cyberhive-guardian.service"
+guardian_timer="$root/etc/systemd/system/cyberhive-guardian.timer"
+grep -F 'MAX_ATTEMPTS = 3' "$guardian" >/dev/null
+grep -F 'WINDOW_SECONDS = 600' "$guardian" >/dev/null
+grep -F 'MIN_INTERVAL_SECONDS = 60' "$guardian" >/dev/null
+grep -F 'CIRCUIT_SECONDS = 900' "$guardian" >/dev/null
+grep -F 'state/guardian/state.json' "$guardian" >/dev/null
+grep -F 'cyberhive-host-disk-guard' "$guardian" >/dev/null
+grep -F 'cyberhive-management-firewall.service' "$guardian" >/dev/null
+grep -F 'cyberhive-management-firewall-attest' "$guardian" >/dev/null
+grep -F 'management-firewall-unattested' "$guardian" >/dev/null
+grep -F 'Type=oneshot' "$guardian_service" >/dev/null
+grep -F 'ExecStart=/usr/local/sbin/cyberhive-guardian' "$guardian_service" >/dev/null
+grep -F 'OnBootSec=1min' "$guardian_timer" >/dev/null
+grep -F 'OnUnitActiveSec=1min' "$guardian_timer" >/dev/null
+grep -F 'Persistent=false' "$guardian_timer" >/dev/null
+grep -F 'systemctl enable cyberhive-guardian.timer' infra/live-usb/debian-live/config/hooks/live/002-cyberhive-unattended-v03.hook.chroot >/dev/null
+grep -F '"$persist/state/guardian"' "$persist_init" >/dev/null
+if grep -n -E 'grub-editenv|systemctl[[:space:]]+(reboot|poweroff)|(^|[^[:alnum:]_])(reboot|poweroff)[[:space:]]*\(' "$guardian"; then
+  echo 'runtime Guardian must not reboot, poweroff or mutate GRUB' >&2
+  exit 1
+fi
 
 host_guard="$root/usr/local/bin/cyberhive-host-disk-guard"
 grep -F '. /usr/local/lib/cyberhive-device.sh' "$host_guard" >/dev/null
@@ -189,7 +278,8 @@ auto_config='infra/live-usb/debian-live/auto/config'
 grep -F 'boot=live components noswap' "$auto_config" >/dev/null
 grep -F '. "$script_dir/config/includes.chroot/etc/cyberhive/live/config.env"' "$builder" >/dev/null
 grep -F 'mkfs.vfat -F 32 -n "$CYBERHIVE_EFI_LABEL"' "$builder" >/dev/null
-grep -F 'regexp --set=1:boot_disk' "$builder" >/dev/null
+grep -F "regexp --set boot_efi '^\\(([^)]+)\\)' \"\$cmdpath\"" "$builder" >/dev/null
+grep -F "regexp --set boot_disk '^([^,]+),gpt1$' \"\$boot_efi\"" "$builder" >/dev/null
 grep -F 'set boot_efi=' "$builder" >/dev/null
 grep -F 'root_boot_disk' "$builder" >/dev/null
 if grep -F 'cyberhive_efi_count' "$builder"; then echo 'GRUB must not infer EFI parent from an unbound marker scan' >&2; exit 1; fi
@@ -197,7 +287,8 @@ if grep -F 'cyberhive_efi_candidate' "$builder"; then echo 'GRUB must not keep a
 grep -F 'set efi="$boot_efi"' "$builder" >/dev/null
 grep -F -- '--modules="$grub_modules"' "$builder" >/dev/null
 grep -F -- '--install-modules="$grub_modules"' "$builder" >/dev/null
-grep -F 'grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot echo"' "$builder" >/dev/null
+grep -F 'grub_modules="part_gpt fat ext2 loadenv linux regexp probe sleep reboot echo test"' "$builder" >/dev/null
+grep -F 'insmod test' "$builder" >/dev/null
 grep -F 'insmod loadenv' "$builder" >/dev/null
 if grep -F 'insmod env' "$builder"; then echo 'GRUB load_env/save_env require loadenv.mod, not env.mod' >&2; exit 1; fi
 grep -F 'insmod probe' "$builder" >/dev/null
@@ -211,6 +302,7 @@ grep -F 'selected_slot="($slotdev)"' "$builder" >/dev/null
 grep -F 'probe --fs-uuid --set=slot_uuid "$selected_slot"' "$builder" >/dev/null
 grep -F 'cannot prove selected slot filesystem UUID' "$builder" >/dev/null
 grep -F 'live-media=/dev/disk/by-uuid/$slot_uuid' "$builder" >/dev/null
+grep -F 'cyberhive.slot=$boot_slot' "$builder" >/dev/null
 grep -F 'boot=live components noswap' "$builder" >/dev/null
 python3 - "$builder" <<'PY'
 from pathlib import Path
@@ -225,8 +317,10 @@ if not match:
 cfg = match.group('cfg')
 required = [
     'insmod loadenv',
-    'regexp --set=1:boot_disk',
-    'regexp --set=1:root_boot_disk',
+    'insmod test',
+    'regexp --set boot_efi',
+    'regexp --set boot_disk',
+    'regexp --set root_boot_disk',
     'set boot_efi="$root"',
     'set slotdev="$boot_disk,gpt2"',
     'set slotdev="$boot_disk,gpt3"',
@@ -235,6 +329,11 @@ required = [
 for needle in required:
     if needle not in cfg:
         raise AssertionError(f'missing GRUB parent proof fragment: {needle}')
+first_bracket_condition = re.search(r'(?m)^\s*if \[', cfg)
+if first_bracket_condition is None:
+    raise AssertionError('embedded GRUB config contains no bracket condition to validate')
+if cfg.index('insmod test') > first_bracket_condition.start():
+    raise AssertionError('test.mod must be loaded before the first bracket condition on Acer standalone GRUB')
 for forbidden in ['insmod env', 'cyberhive_efi_candidate', 'cyberhive_efi_count']:
     if forbidden in cfg:
         raise AssertionError(f'unsafe GRUB parent fallback remains: {forbidden}')
@@ -313,11 +412,11 @@ def run_parent_proof(*, cmdpath='', root='', files=()):
     def run_line(line):
         if line.startswith('regexp '):
             parts = shlex.split(line)
-            if len(parts) != 4 or not parts[1].startswith('--set=1:'):
+            if len(parts) != 5 or parts[1] != '--set':
                 raise UnsupportedGrub(f'unsupported regexp statement: {line}')
-            target = parts[1].split(':', 1)[1]
-            pattern = parts[2]
-            subject = expand(parts[3])
+            target = parts[2]
+            pattern = parts[3]
+            subject = expand(parts[4])
             found = re.match(pattern, subject)
             env[target] = found.group(1) if found else ''
             return
@@ -359,6 +458,15 @@ cmdpath_ok = run_parent_proof(cmdpath='(hd2,gpt1)/EFI/BOOT/BOOTX64.EFI')
 assert cmdpath_ok['status'] == 'ok'
 assert cmdpath_ok['boot_disk'] == 'hd2'
 assert cmdpath_ok['boot_efi'] == 'hd2,gpt1'
+
+acer_cmdpath = run_parent_proof(cmdpath='(hd0,gpt1)/EFI/BOOT')
+assert acer_cmdpath['status'] == 'ok'
+assert acer_cmdpath['boot_disk'] == 'hd0'
+assert acer_cmdpath['boot_efi'] == 'hd0,gpt1'
+acer_slotdev = f"{acer_cmdpath['boot_disk']},gpt2"
+assert acer_slotdev == 'hd0,gpt2'
+assert f"({acer_slotdev})" == '(hd0,gpt2)'
+assert f"({acer_slotdev})/slots/A" == '(hd0,gpt2)/slots/A'
 
 root_ok = run_parent_proof(
     cmdpath='/EFI/BOOT/BOOTX64.EFI',
@@ -414,7 +522,7 @@ grep -F 'ignore_loglevel' "$builder" >/dev/null
 grep -F 'systemd.log_level=debug' "$builder" >/dev/null
 grep -F 'systemd.journald.forward_to_console=1' "$builder" >/dev/null
 grep -F 'rd.debug' "$builder" >/dev/null
-grep -F 'nomodeset' "$builder" >/dev/null
+if grep -F 'nomodeset' "$builder"; then echo 'default diagnostic kernel command line must preserve native graphics/KMS' >&2; exit 1; fi
 grep -F 'console=tty0' "$builder" >/dev/null
 grep -F 'rd.shell' "$builder" >/dev/null
 grep -F 'rd.emergency=shell' "$builder" >/dev/null
